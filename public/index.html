@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spotify AI Mixer</title>
+    <style>
+      body { font-family: -apple-system, system-ui, sans-serif; background:#0d1117; color:#e6edf3; margin:0; padding:24px; }
+      h1 { font-size:20px; }
+      input { width:520px; max-width:80vw; padding:8px; border-radius:6px; border:1px solid #30363d; background:#161b22; color:#e6edf3; }
+      button { padding:8px 14px; border-radius:6px; border:0; background:#1db954; color:#fff; font-weight:600; cursor:pointer; }
+      button.secondary { background:#21262d; color:#e6edf3; border:1px solid #30363d; }
+      .row { display:flex; gap:8px; align-items:center; margin:12px 0; flex-wrap:wrap; }
+      table { border-collapse:collapse; width:100%; margin-top:16px; font-size:13px; }
+      td, th { padding:6px 10px; border-bottom:1px solid #21262d; text-align:left; }
+      .smooth { color:#3fb950; } .ok { color:#d29922; } .risky { color:#f85149; }
+      .now { background:#132d1c; }
+      .muted { color:#8b949e; }
+      #notice { background:#161b22; border:1px solid #30363d; padding:10px 14px; border-radius:8px; font-size:13px; }
+    </style>
+  </head>
+  <body>
+    <h1>🎧 Spotify AI Mixer</h1>
+    <div id="notice">
+      For overlapping transitions, enable <b>Spotify → Settings → Crossfade</b> (up to 12s) in your
+      Spotify client once. This app orders tracks harmonically so that crossfade sounds like a real mix.
+    </div>
+
+    <div class="row">
+      <button id="login">1. Connect Spotify</button>
+      <span id="who" class="muted"></span>
+    </div>
+
+    <div class="row">
+      <input id="playlist" placeholder="Playlist URL or ID"
+             value="50e0ObEbA4rcaznXWS2jBX" />
+      <button id="build" class="secondary">2. Build AI set</button>
+      <button id="play" class="secondary">3. Play set</button>
+    </div>
+
+    <div id="status" class="muted"></div>
+    <table id="out"></table>
+
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script src="player.js"></script>
+  </body>
+</html>

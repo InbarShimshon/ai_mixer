@@ -1,0 +1,13 @@
+{
+  "name": "spotify-ai-mixer",
+  "version": "0.1.0",
+  "description": "AI-ordered harmonic mixing on top of Spotify playback",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
