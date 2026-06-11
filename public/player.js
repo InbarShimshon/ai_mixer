@@ -466,6 +466,7 @@ let dragFlags = null;
 function render({ order, transitions }) {
   $("spots").innerHTML = "";
   $("emptyState").style.display = order.length ? "none" : "";
+  $("mixCard").style.display = order.length ? "block" : "none"; // live mix view always visible with a set
   const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th></th><th></th></tr>`];
   order.forEach((t, i) => {
     const tr = transitions[i];
@@ -633,15 +634,29 @@ function drawMixTimeline(n) {
   ctx.beginPath(); ctx.moveTo(px, 6); ctx.lineTo(px, H - 6); ctx.stroke();
   ctx.fillStyle = "#fff";
   ctx.beginPath(); ctx.moveTo(px - 4, 6); ctx.lineTo(px + 4, 6); ctx.lineTo(px, 12); ctx.closePath(); ctx.fill();
+
+  // Hint when it's a static preview (not playing).
+  if (!n.playing) {
+    ctx.fillStyle = "rgba(153,162,184,.9)";
+    ctx.font = "11px Inter, sans-serif";
+    ctx.fillText("preview — press ▶ Play set to watch it move & cross over", pad + 4, H - 6);
+  }
 }
 
-// Smoothly animate the playhead between 1s polls.
+// Always show the 2-song mix view when a set exists: animate the real playhead
+// while playing, otherwise show a static preview of the first two songs.
 function animateTimeline() {
-  if (lastNow && lastNow.duration_ms) {
-    const n = { ...lastNow };
-    if (lastNow.playing) n.progress_ms = Math.min(lastNow.duration_ms, lastNow.progress_ms + (performance.now() - lastNowTs));
-    drawMixTimeline(n);
-  }
+  try {
+    let n = null;
+    if (lastNow && lastNow.duration_ms && lastNow.name) {
+      n = { ...lastNow };
+      if (lastNow.playing) n.progress_ms = Math.min(lastNow.duration_ms, lastNow.progress_ms + (performance.now() - lastNowTs));
+    } else if (currentSet?.order?.length) {
+      const a = currentSet.order[0];
+      n = { name: a.name, uri: a.uri, duration_ms: a.duration_ms || 210000, progress_ms: 0, playing: false };
+    }
+    if (n) drawMixTimeline(n);
+  } catch (e) { /* never let the loop die */ }
   requestAnimationFrame(animateTimeline);
 }
 requestAnimationFrame(animateTimeline);
