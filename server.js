@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import fs from "fs";
 import { analyzeAll } from "./lib/analysis.js";
-import { orderSet, buildTransitions } from "./lib/harmonic.js";
+import { orderSet, buildTransitions, bestInsertions } from "./lib/harmonic.js";
 import { parseInput, resolveTrack, playlistIdFrom, fetchPlaylistTracks } from "./lib/resolve.js";
 import { suggestTracks } from "./lib/suggest.js";
 import { fillMissing } from "./lib/estimate.js";
@@ -239,6 +239,43 @@ app.post("/api/reorder", async (req, res) => {
 app.post("/api/transitions", (req, res) => {
   const order = req.body.tracks || [];
   res.json({ count: order.length, order, transitions: buildTransitions(order) });
+});
+
+// Suggest the smoothest positions to move a given track to.
+// Body: { tracks, index } -> { spots: [{pos, score, flag}], others }
+app.post("/api/bestspots", (req, res) => {
+  const { tracks = [], index } = req.body;
+  const track = tracks[index];
+  if (!track) return res.status(400).json({ error: "bad index" });
+  const others = tracks.filter((_, k) => k !== index);
+  res.json({ spots: bestInsertions(others, track).slice(0, 4), others });
+});
+
+// --- Saved sets (persisted to disk so they survive restarts) ---
+const SETS_FILE = ".sets.json";
+let savedSets = {};
+try { savedSets = JSON.parse(fs.readFileSync(SETS_FILE, "utf8")); } catch {}
+const persistSets = () => { try { fs.writeFileSync(SETS_FILE, JSON.stringify(savedSets)); } catch {} };
+
+app.get("/api/sets", (req, res) => {
+  res.json(Object.values(savedSets).map((s) => ({ name: s.name, count: s.order.length, savedAt: s.savedAt })));
+});
+app.post("/api/sets", (req, res) => {
+  const { name, order } = req.body;
+  if (!name || !Array.isArray(order)) return res.status(400).json({ error: "name + order required" });
+  savedSets[name] = { name, order, savedAt: new Date().toISOString() };
+  persistSets();
+  res.json({ ok: true });
+});
+app.get("/api/sets/:name", (req, res) => {
+  const s = savedSets[req.params.name];
+  if (!s) return res.status(404).json({ error: "not found" });
+  res.json({ count: s.order.length, order: s.order, transitions: buildTransitions(s.order) });
+});
+app.delete("/api/sets/:name", (req, res) => {
+  delete savedSets[req.params.name];
+  persistSets();
+  res.json({ ok: true });
 });
 
 // Seek to a position within the current track.

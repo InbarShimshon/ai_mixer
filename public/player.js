@@ -61,8 +61,7 @@ async function play(uris) {
     body: JSON.stringify({ uris, device_id: deviceId() }),
   });
   if (r.status === 204 || r.ok) {
-    $("controls").style.display = "flex";
-    $("scrubrow").style.display = "flex";
+    $("bar").style.display = "block";
     startPolling();
     return true;
   }
@@ -137,6 +136,59 @@ $("automix").onchange = () => {
   }
 };
 
+// --- Deep mix: transition before a song ends for a continuous DJ blend ---
+let deepAdvancedUri = null;
+function deepMix(n) {
+  if (!$("deepmix").checked || !n.playing || !n.duration_ms || !n.uri) return;
+  if (n.progress_ms / n.duration_ms >= 0.8 && deepAdvancedUri !== n.uri) {
+    deepAdvancedUri = n.uri; // advance once per track
+    fetch("/api/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  }
+}
+
+// --- Saved sets ---
+async function loadSavedList() {
+  const list = await (await fetch("/api/sets")).json();
+  const sel = $("savedSets");
+  sel.innerHTML = list.length ? "" : "<option>— no saved sets —</option>";
+  list.forEach((s) => {
+    const o = document.createElement("option");
+    o.value = s.name;
+    o.textContent = `${s.name} (${s.count})`;
+    sel.appendChild(o);
+  });
+}
+$("saveSet").onclick = async () => {
+  if (!currentSet) return status("Build or load a set first.");
+  const name = ($("setName").value || "").trim();
+  if (!name) return status("Give the set a name to save it.");
+  await fetch("/api/sets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, order: currentSet.order }),
+  });
+  await loadSavedList();
+  $("savedSets").value = name;
+  status(`Saved “${name}”.`);
+};
+$("loadSet").onclick = async () => {
+  const name = $("savedSets").value;
+  if (!name) return;
+  const r = await fetch("/api/sets/" + encodeURIComponent(name));
+  if (!r.ok) return status("Couldn't load that set.");
+  currentSet = await r.json();
+  render(currentSet);
+  $("setName").value = name;
+  status(`Loaded “${name}” — edit it, then Play or re-Save.`);
+};
+$("delSet").onclick = async () => {
+  const name = $("savedSets").value;
+  if (!name) return;
+  await fetch("/api/sets/" + encodeURIComponent(name), { method: "DELETE" });
+  await loadSavedList();
+  status(`Deleted “${name}”.`);
+};
+
 // --- Now-playing poll (1s, drives scrubber + auto-mix) ---
 function startPolling() {
   if (polling) return;
@@ -168,6 +220,7 @@ async function refreshNow() {
       ? "⚠ Web Player can't crossfade — use the desktop app + Auto-mix"
       : "";
   autoMix(n);
+  deepMix(n);
 }
 
 // --- AI suggestions ---
@@ -237,18 +290,20 @@ async function applyOrder(newOrder) {
 let dragFrom = null;
 
 function render({ order, transitions }) {
-  const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th></th></tr>`];
+  $("spots").innerHTML = "";
+  const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th></th><th></th></tr>`];
   order.forEach((t, i) => {
     const tr = transitions[i];
-    const flag = tr ? `<span class="${tr.flag}">${tr.flag}</span>` : "—";
+    const flag = tr ? `<span class="badge ${tr.flag}">${tr.flag}</span>` : "—";
     rows.push(
       `<tr draggable="true" data-idx="${i}" data-name="${(t.name || "").replace(/"/g, "")}">
-        <td class="handle" title="Drag to reorder" style="cursor:grab">⠿</td>
-        <td>${i + 1}</td>
-        <td class="jump" title="Click to play from here" style="cursor:pointer">${t.name}</td>
+        <td class="handle" title="Drag to reorder">⠿</td>
+        <td class="muted">${i + 1}</td>
+        <td class="jump" title="Click to play from here">${t.name}</td>
         <td class="muted">${t.artist}</td>
         <td>${t.bpm ?? "?"}</td><td>${t.camelot ?? "?"}</td><td>${flag}</td>
-        <td class="rm" title="Remove" style="cursor:pointer;color:#f85149">✕</td>
+        <td class="target" title="Suggest smooth spots for this song">🎯</td>
+        <td class="rm" title="Remove">✕</td>
       </tr>`
     );
   });
@@ -256,32 +311,54 @@ function render({ order, transitions }) {
 
   $("out").querySelectorAll("tr[data-idx]").forEach((row) => {
     const i = Number(row.dataset.idx);
-    // Click the track name -> play from here.
     row.querySelector(".jump").onclick = async () => {
       const uris = currentSet.order.slice(i).map((t) => t.uri);
       if (await play(uris)) status(`Jumped to “${currentSet.order[i].name}”.`);
     };
-    // Remove this song.
     row.querySelector(".rm").onclick = async () => {
       const removed = currentSet.order[i].name;
-      const next = currentSet.order.filter((_, k) => k !== i);
-      await applyOrder(next);
+      await applyOrder(currentSet.order.filter((_, k) => k !== i));
       status(`Removed “${removed}”.`);
     };
-    // Drag to reorder.
+    row.querySelector(".target").onclick = () => suggestSpots(i);
     row.addEventListener("dragstart", () => (dragFrom = i));
     row.addEventListener("dragover", (e) => e.preventDefault());
     row.addEventListener("drop", async (e) => {
       e.preventDefault();
-      const to = i;
-      if (dragFrom === null || dragFrom === to) return;
+      if (dragFrom === null || dragFrom === i) return;
       const arr = currentSet.order.slice();
       const [moved] = arr.splice(dragFrom, 1);
-      arr.splice(to, 0, moved);
+      arr.splice(i, 0, moved);
       dragFrom = null;
       await applyOrder(arr);
-      status(`Moved “${moved.name}” to position ${to + 1}.`);
+      status(`Moved “${moved.name}” to position ${i + 1}.`);
     });
+  });
+}
+
+// Ask the server for the smoothest spots to move track `i` to, show as chips.
+async function suggestSpots(i) {
+  const song = currentSet.order[i].name;
+  const r = await fetch("/api/bestspots", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tracks: currentSet.order, index: i }),
+  });
+  const { spots, others } = await r.json();
+  const chips = [`<span class="chip head">Smoothest spots for “${song}”:</span>`];
+  spots.forEach((s) => {
+    const where = s.pos === 0 ? "at the very start" : `after “${others[s.pos - 1].name}”`;
+    chips.push(`<span class="chip" data-pos="${s.pos}"><span class="badge ${s.flag}">${s.flag}</span> ${where}</span>`);
+  });
+  $("spots").innerHTML = chips.join("");
+  $("spots").querySelectorAll(".chip[data-pos]").forEach((chip) => {
+    chip.onclick = async () => {
+      const pos = Number(chip.dataset.pos);
+      const arr = others.slice();
+      arr.splice(pos, 0, currentSet.order[i]);
+      await applyOrder(arr);
+      status(`Moved “${song}” to a ${chip.querySelector(".badge").textContent} spot.`);
+    };
   });
 }
 
@@ -292,3 +369,4 @@ function highlightNowPlaying(name) {
 }
 
 refreshAuthAndDevices();
+loadSavedList();
