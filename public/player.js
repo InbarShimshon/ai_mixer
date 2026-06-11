@@ -177,7 +177,7 @@ async function smoothPlay(uris) {
   if (!$("automix")?.checked) return play(uris); // instant when Auto-mix is off
   await setVol(55); await wait(160); await setVol(40);
   const ok = await play(uris);
-  await wait(150); setVol(65); setTimeout(() => setVol(BASE_VOL), 500);
+  await wait(150); setVol(65); setTimeout(() => setVol(baseVol), 500);
   return ok;
 }
 
@@ -272,17 +272,19 @@ $("scrub").addEventListener("change", async () => {
 });
 
 // --- Auto-mix: app-driven volume fade out/in around each transition ---
-// Gentle dip — LOW_VOL stays high so transitions don't go quiet, and a shorter
-// fade window so the dip is brief.
-const BASE_VOL = 92, LOW_VOL = 62, FADE_MS = 4000;
+// baseVol = the user's volume (set by the slider); Auto-mix dips relative to it.
+let baseVol = 90;
+const FADE_MS = 4000;
+const lowVol = () => Math.round(baseVol * 0.68);
 let lastSentVol = null;
 function autoMix(n) {
   if (!$("automix").checked) return;
   if (!n.playing || !n.duration_ms) return;
   const remaining = n.duration_ms - n.progress_ms;
-  let target = BASE_VOL;
-  if (remaining <= FADE_MS) target = LOW_VOL + (BASE_VOL - LOW_VOL) * (remaining / FADE_MS); // fade out
-  else if (n.progress_ms <= FADE_MS) target = LOW_VOL + (BASE_VOL - LOW_VOL) * (n.progress_ms / FADE_MS); // fade in
+  const BASE = baseVol, LOW = lowVol();
+  let target = BASE;
+  if (remaining <= FADE_MS) target = LOW + (BASE - LOW) * (remaining / FADE_MS); // fade out
+  else if (n.progress_ms <= FADE_MS) target = LOW + (BASE - LOW) * (n.progress_ms / FADE_MS); // fade in
   target = Math.round(target);
   if (lastSentVol === null || Math.abs(target - lastSentVol) >= 4) {
     lastSentVol = target;
@@ -293,6 +295,9 @@ function autoMix(n) {
     });
   }
 }
+// Volume slider — sets the playback volume and the level Auto-mix fades around.
+$("vol").oninput = () => { baseVol = +$("vol").value; setVol(baseVol); };
+
 $("automix").onchange = () => {
   if ($("automix").checked) {
     status("Auto-mix on — the app fades each song out and the next in automatically.");
@@ -301,7 +306,7 @@ $("automix").onchange = () => {
     fetch("/api/volume", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ volume_percent: BASE_VOL }),
+      body: JSON.stringify({ volume_percent: baseVol }),
     });
   }
 };
