@@ -456,6 +456,11 @@ async function refreshNow() {
     highlightNowPlaying(n.name);
     $("nowName").textContent = (n.playing ? "▶ " : "⏸ ") + n.name;
   }
+  // Keep an open Transition planner on the currently-playing song's transition.
+  if (mixViewIndex !== null && $("mixview").style.display !== "none" && n.uri && currentSet?.order?.length) {
+    const pi = currentSet.order.findIndex((t) => t.uri === n.uri || t.name === n.name);
+    if (pi >= 0 && pi < currentSet.order.length - 1 && pi !== mixViewIndex) showMixView(pi, true);
+  }
   if (!scrubbing && n.duration_ms) {
     $("scrub").max = n.duration_ms;
     $("scrub").value = n.progress_ms || 0;
@@ -767,6 +772,7 @@ function render({ order, transitions }) {
 // --- Live mix timeline (GarageBand-style: current clip + next crossing over) ---
 let lastNow = null, lastNowTs = 0;
 let lastMixMap = null;
+let mixViewIndex = null; // junction currently shown in the Transition planner
 // Click the Live Mix timeline to move playback to that point in the current song.
 {
   const c = $("mixtimeline");
@@ -906,9 +912,10 @@ function animateTimeline() {
 requestAnimationFrame(animateTimeline);
 
 // --- Transition planner: BPM/beat alignment + best transition point ---
-function showMixView(i) {
+function showMixView(i, auto = false) {
   const a = currentSet.order[i], b = currentSet.order[i + 1];
   if (!b) return;
+  mixViewIndex = i; // remember which junction is shown (so it can follow playback)
   const mv = $("mixview");
   const ba = a.bpm, bb = b.bpm;
 
@@ -952,7 +959,7 @@ function showMixView(i) {
     (a.uri ? `<button class="btn-primary btn-sm" id="mvjump">▶ Hear this transition</button>` : "") +
     `<button class="btn-ghost btn-sm" id="mvclose">Close</button></div>`;
   mv.style.display = "block";
-  $("mvclose").onclick = () => (mv.style.display = "none");
+  $("mvclose").onclick = () => { mv.style.display = "none"; mixViewIndex = null; };
   if ($("mvjump")) {
     $("mvjump").onclick = async () => {
       // Preview the transition: jump to ~14s before the end so you hear the
@@ -987,7 +994,7 @@ function showMixView(i) {
     };
   }
   drawBeatGrid(ba, bb);
-  mv.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (!auto) mv.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function drawBeatGrid(ba, bb) {
