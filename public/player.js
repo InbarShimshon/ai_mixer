@@ -296,6 +296,49 @@ function deepMix(n) {
   }
 }
 
+// --- Share via QR + merge guest additions ---
+let shareId = null;
+let shareKnownUris = new Set();
+$("share").onclick = async () => {
+  if (!currentSet?.order?.length) return status("Build a set first.");
+  const r = await fetch("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ order: currentSet.order, name: $("setName").value || $("context").value || "Party set" }),
+  });
+  const d = await r.json();
+  if (d.error) return status("Share failed: " + d.error);
+  shareId = d.id;
+  shareKnownUris = new Set(currentSet.order.map((t) => t.uri));
+  const url = location.origin + "/join/" + shareId;
+  $("qr").src = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=" + encodeURIComponent(url);
+  $("shareLink").textContent = url;
+  $("shareLink").href = url;
+  $("sharePanel").style.display = "block";
+  $("sharePanel").scrollIntoView({ behavior: "smooth", block: "center" });
+  status("Share live — guests can scan and add songs. New picks slot in automatically.");
+  pollShare();
+};
+async function pollShare() {
+  if (!shareId) return;
+  try {
+    const s = await (await fetch("/api/share/" + shareId)).json();
+    if (s.order) {
+      const fresh = s.order.filter((t) => t.uri && !shareKnownUris.has(t.uri));
+      if (fresh.length && currentSet) {
+        // Merge guest picks (already best-placed server-side) without disrupting flow.
+        currentSet = await (await fetch("/api/transitions", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tracks: s.order }),
+        })).json();
+        s.order.forEach((t) => shareKnownUris.add(t.uri));
+        render(currentSet);
+        toast(`🎉 Guest added “${fresh[0].name}”${fresh.length > 1 ? ` +${fresh.length - 1} more` : ""}`);
+      }
+    }
+  } catch {}
+  setTimeout(pollShare, 5000);
+}
+
 // --- Saved sets ---
 async function loadSavedList() {
   const list = await (await fetch("/api/sets")).json();
@@ -420,20 +463,27 @@ function renderSearch(results) {
 
 // --- AI suggestions ---
 $("suggest").onclick = async () => {
-  if (!currentSet) return ($("suggestStatus").textContent = "Build a set first.");
+  if (!currentSet) return status("Build a set first.");
+  toast("Asking the AI for songs that fit…");
   $("suggestStatus").textContent = "Asking the AI for songs that fit…";
-  const r = await fetch("/api/suggest", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tracks: currentSet.order.map((t) => ({ name: t.name, artist: t.artist, bpm: t.bpm, camelot: t.camelot })),
-      context: $("context").value || "wedding party",
-    }),
-  });
-  const data = await r.json();
-  if (data.error) return ($("suggestStatus").textContent = "Error: " + data.error);
+  let data;
+  try {
+    const r = await fetch("/api/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tracks: currentSet.order.map((t) => ({ name: t.name, artist: t.artist, bpm: t.bpm, camelot: t.camelot })),
+        context: $("context").value || "wedding party",
+      }),
+    });
+    data = await r.json();
+  } catch { return status("Suggestions failed — try again."); }
+  if (data.error) { $("suggestStatus").textContent = "Error: " + data.error; return toast("Error: " + data.error); }
   renderSuggestions(data.suggestions || []);
   $("suggestStatus").textContent = `${data.suggestions.length} suggestions — ➕ inserts each at its best spot.`;
+  // The AI suggestions card is at the bottom — bring it into view.
+  $("suggestions").scrollIntoView({ behavior: "smooth", block: "center" });
+  toast(`${data.suggestions.length} AI suggestions ready ↓`);
 };
 
 function renderSuggestions(list) {

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Add a song · AI Mixer</title>
+    <style>
+      :root { --bg:#0a0c13; --panel:#141823; --panel2:#1b2030; --border:rgba(255,255,255,.12);
+        --text:#f2f4fb; --muted:#99a2b8; --accent:#6d7cff; --smooth:#45d483; }
+      * { box-sizing:border-box; }
+      body { margin:0; min-height:100vh; background:radial-gradient(700px 400px at 80% -10%, rgba(109,124,255,.18), transparent 60%), var(--bg);
+        color:var(--text); font-family:-apple-system,system-ui,sans-serif; padding:18px; -webkit-font-smoothing:antialiased; }
+      .wrap { max-width:520px; margin:0 auto; }
+      h1 { font-size:19px; margin:6px 0 2px; }
+      .sub { color:var(--muted); font-size:13px; margin:0 0 16px; }
+      input { width:100%; padding:13px 14px; border-radius:11px; border:1px solid var(--border); background:#0e1119; color:var(--text); font-size:15px; outline:none; }
+      input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(109,124,255,.35); }
+      .res { margin-top:14px; }
+      .item { display:flex; align-items:center; gap:12px; padding:12px; border-bottom:1px solid rgba(255,255,255,.06); }
+      .item .t { flex:1; min-width:0; }
+      .item .t b { display:block; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .item .t span { color:var(--muted); font-size:12px; }
+      .add { padding:9px 14px; border:0; border-radius:10px; background:linear-gradient(180deg,#7d8aff,#5a63ea); color:#fff; font-weight:600; font-size:14px; cursor:pointer; }
+      .add:disabled { opacity:.5; }
+      .ok { color:var(--smooth); font-weight:600; }
+      #msg { margin-top:12px; color:var(--muted); font-size:13px; min-height:18px; }
+      .head { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+      .logo { width:38px; height:38px; border-radius:11px; background:linear-gradient(140deg,#8b96ff,#5b54e6); display:grid; place-items:center; font-size:18px; }
+      .toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:rgba(26,31,46,.96);
+        border:1px solid var(--border); padding:11px 18px; border-radius:12px; font-size:14px; opacity:0; transition:opacity .25s; }
+      .toast.show { opacity:1; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="head"><div class="logo">🎉</div><div><h1 id="title">Add a song</h1><p class="sub" id="sub">Request a track for the party — it slots in where it fits best.</p></div></div>
+      <input id="q" placeholder="Search a song or artist…" autofocus />
+      <div class="res" id="res"></div>
+      <div id="msg"></div>
+    </div>
+    <div class="toast" id="toast"></div>
+    <script>
+      const id = location.pathname.split("/").pop();
+      const $ = (x) => document.getElementById(x);
+      let tt;
+      function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("show"),2600); }
+      fetch("/api/share/"+id).then(r=>r.ok?r.json():null).then(s=>{ if(s){ $("title").textContent="Add to “"+s.name+"”"; } else { $("sub").textContent="This party link isn't active."; } });
+      let timer;
+      $("q").addEventListener("input", () => { clearTimeout(timer); timer=setTimeout(search, 300); });
+      async function search(){
+        const q=$("q").value.trim(); if(!q){ $("res").innerHTML=""; return; }
+        const r=await fetch("/api/share/"+id+"/search?q="+encodeURIComponent(q));
+        const d=await r.json();
+        $("res").innerHTML="";
+        (d.results||[]).forEach(t=>{
+          const row=document.createElement("div"); row.className="item";
+          row.innerHTML=`<div class="t"><b></b><span></span></div><button class="add">Add</button>`;
+          row.querySelector("b").textContent=t.name; row.querySelector("span").textContent=t.artist;
+          row.querySelector(".add").onclick=async(e)=>{
+            e.target.disabled=true;
+            const rr=await fetch("/api/share/"+id+"/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(t)});
+            const dd=await rr.json();
+            if(dd.ok){ e.target.outerHTML='<span class="ok">✓ added</span>'; toast(dd.already?"Already in the set":"Added “"+t.name+"” 🎶"); }
+            else { e.target.disabled=false; toast(dd.error||"Couldn't add"); }
+          };
+          $("res").appendChild(row);
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -98,6 +98,8 @@ app.post("/gate", (req, res) => {
 
 app.use((req, res, next) => {
   if (!process.env.APP_PASSWORD || req.user.gate || req.path === "/gate") return next();
+  // Guests reach a shared set via QR without the host password.
+  if (req.path.startsWith("/join") || req.path.startsWith("/api/share")) return next();
   if (req.path.startsWith("/api/")) return res.status(401).json({ error: "locked" });
   res.set("Content-Type", "text/html").send(GATE_HTML);
 });
@@ -451,6 +453,60 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
   }
 });
 
+// --- Shareable sets + guest "add a song" (QR jukebox) ---
+const shareStore = () => (users.__shares ||= {});
+
+app.post("/api/share", async (req, res) => {
+  const user = await authed(req, res);
+  if (!user) return;
+  const order = req.body.order || [];
+  if (!order.length) return res.status(400).json({ error: "empty set" });
+  const id = crypto.randomBytes(5).toString("hex");
+  shareStore()[id] = { sid: req.sid, name: (req.body.name || "Party set").slice(0, 80), order, createdAt: Date.now() };
+  persist();
+  res.json({ id });
+});
+
+app.get("/api/share/:id", (req, res) => {
+  const s = shareStore()[req.params.id];
+  if (!s) return res.status(404).json({ error: "not found" });
+  res.json({ name: s.name, order: s.order });
+});
+
+// Guest search uses the HOST's token (guests don't need their own Spotify).
+app.get("/api/share/:id/search", async (req, res) => {
+  const s = shareStore()[req.params.id];
+  if (!s) return res.status(404).json({ error: "not found" });
+  const host = users[s.sid];
+  if (!host?.tokens?.access_token) return res.status(400).json({ error: "host offline" });
+  await ensureToken(host);
+  const q = (req.query.q || "").slice(0, 200).trim();
+  if (!q) return res.json({ results: [] });
+  const r = await spotify(host, `/search?type=track&limit=6&q=${encodeURIComponent(q)}`);
+  const d = await r.json();
+  res.json({ results: (d.tracks?.items || []).map((t) => ({ uri: t.uri, name: t.name, artist: (t.artists || []).map((a) => a.name).join(", ") })) });
+});
+
+// Guest adds a song — analyzed and SMART-INSERTED at its best harmonic spot so it
+// doesn't ruin the flow.
+app.post("/api/share/:id/add", rateLimit(40, 60000), async (req, res) => {
+  const s = shareStore()[req.params.id];
+  if (!s) return res.status(404).json({ error: "not found" });
+  const host = users[s.sid];
+  if (!host?.tokens?.access_token) return res.status(400).json({ error: "host offline" });
+  await ensureToken(host);
+  const { uri, name, artist } = req.body;
+  if (!uri) return res.status(400).json({ error: "no track" });
+  if (s.order.some((t) => t.uri === uri)) return res.json({ ok: true, already: true });
+  const [a] = await analyzeAll([{ uri, name, artist }], process.env);
+  await fillMissing([a]);
+  const spots = bestInsertions(s.order, a);
+  const pos = spots[0]?.pos ?? s.order.length;
+  s.order.splice(pos, 0, { ...a, guest: true });
+  persist();
+  res.json({ ok: true, name: a.name });
+});
+
 // AI suggestions.
 app.post("/api/suggest", rateLimit(12, 60000), async (req, res) => {
   try {
@@ -519,5 +575,8 @@ app.get("/api/now", async (req, res) => {
     deviceType: d.device?.type,
   });
 });
+
+// Guest jukebox page (reached via QR) — id read from the path by join.html.
+app.get("/join/:id", (req, res) => res.sendFile("join.html", { root: "public" }));
 
 app.listen(PORT, () => console.log(`\n  ▶  AI Mixer:  ${REDIRECT_URI.replace("/callback", "") || "http://127.0.0.1:" + PORT}\n`));

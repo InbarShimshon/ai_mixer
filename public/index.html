@@ -182,9 +182,26 @@
         box-shadow: 0 12px 40px rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; max-width: 90vw; }
       #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-      @media (max-width: 640px) {
-        .wrap { padding: 0 14px 150px; }
-        .card { padding: 18px 16px; }
+      @media (max-width: 680px) {
+        .wrap { padding: 0 12px 170px; }
+        .card { padding: 16px 14px; }
+        header { flex-wrap: wrap; gap: 8px; padding: 14px 0 12px; }
+        .brand h1 { font-size: 17px; }
+        .brand p { font-size: 11.5px; }
+        /* data tables scroll sideways instead of squishing */
+        table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+        th, td { padding: 10px 9px; }
+        button { padding: 12px 15px; }           /* bigger tap targets */
+        .btn-sm { padding: 9px 12px; }
+        input, select, textarea { font-size: 16px; } /* prevents iOS zoom-on-focus */
+        /* transport bar: stack the scrubber full-width, wrap controls */
+        #bar { padding: 10px 12px; }
+        #bar .inner { gap: 8px; row-gap: 10px; }
+        #nowName { min-width: 100%; font-size: 12px; }
+        #scrub { min-width: 100%; order: -1; }
+        #bar .ico { width: 40px; height: 40px; }
+        .toggle { font-size: 12px; padding: 9px 12px; }
+        #mixtimeline { height: 120px; }
       }
     </style>
   </head>
@@ -257,6 +274,15 @@
           <select id="savedSets" style="flex:1; min-width:160px"></select>
           <button id="loadSet" class="btn-ghost btn-sm">📂 Load</button>
           <button id="delSet" class="btn-ghost btn-sm">🗑</button>
+        </div>
+        <div class="gap"></div>
+        <div class="row tight">
+          <button id="share" class="btn-primary btn-sm">📱 Share QR — let guests add songs</button>
+        </div>
+        <div id="sharePanel" style="display:none; margin-top:14px; text-align:center">
+          <img id="qr" alt="QR" style="width:200px; height:200px; border-radius:12px; background:#fff; padding:8px" />
+          <div style="margin-top:8px"><a id="shareLink" target="_blank" style="color:var(--accent); font-size:13px; word-break:break-all"></a></div>
+          <div class="muted" style="font-size:12px; margin-top:6px">Guests scan this, search a song, and it slots in where it fits — no app, no login.</div>
         </div>
       </div>
 
