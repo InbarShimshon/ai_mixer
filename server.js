@@ -293,6 +293,36 @@ app.post("/api/transitions", (req, res) => {
   res.json({ count: order.length, order, transitions: buildTransitions(order) });
 });
 
+// General catalog search — find any track to add.
+app.get("/api/search", rateLimit(60, 60000), async (req, res) => {
+  const user = await authed(req, res);
+  if (!user) return;
+  const q = (req.query.q || "").slice(0, 200).trim();
+  if (!q) return res.json({ results: [] });
+  const r = await spotify(user, `/search?type=track&limit=8&q=${encodeURIComponent(q)}`);
+  const d = await r.json();
+  const results = (d.tracks?.items || []).map((t) => ({
+    uri: t.uri,
+    id: t.id,
+    name: t.name,
+    artist: (t.artists || []).map((a) => a.name).join(", "),
+    album: t.album?.name,
+  }));
+  res.json({ results });
+});
+
+// Add one track to a set: analyze it (BPM/key, AI-fill) then place it harmonically.
+app.post("/api/addtrack", rateLimit(40, 60000), async (req, res) => {
+  const user = await authed(req, res);
+  if (!user) return;
+  const { tracks = [], add } = req.body;
+  if (!add?.uri) return res.status(400).json({ error: "no track" });
+  const analyzed = await analyzeAll([{ uri: add.uri, name: add.name, artist: add.artist }], process.env);
+  await fillMissing(analyzed);
+  const { order, transitions } = orderSet([...tracks, analyzed[0]]);
+  res.json({ count: order.length, order, transitions });
+});
+
 app.post("/api/bestspots", (req, res) => {
   const { tracks = [], index } = req.body;
   const track = tracks[index];

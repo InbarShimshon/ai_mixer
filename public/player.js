@@ -256,6 +256,48 @@ async function refreshNow() {
   deepMix(n);
 }
 
+// --- General song search ---
+async function runSearch() {
+  const q = $("searchq").value.trim();
+  if (!q) return;
+  $("searchStatus").textContent = "Searching…";
+  const r = await fetch("/api/search?q=" + encodeURIComponent(q));
+  if (!r.ok) return ($("searchStatus").textContent = "Search failed (are you connected?).");
+  const { results } = await r.json();
+  renderSearch(results);
+  $("searchStatus").textContent = results.length ? `${results.length} results — ➕ adds to your set at its best spot.` : "No matches.";
+}
+$("searchBtn").onclick = runSearch;
+$("searchq").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+
+function renderSearch(results) {
+  const rows = [`<tr><th></th><th>Track</th><th>Artist</th><th>Album</th></tr>`];
+  results.forEach((t, i) => {
+    rows.push(
+      `<tr data-i="${i}">
+        <td><button class="addbtn btn-ghost btn-sm">➕</button></td>
+        <td>${t.name}</td><td class="muted">${t.artist}</td><td class="muted">${t.album || ""}</td>
+      </tr>`
+    );
+  });
+  $("searchResults").innerHTML = rows.join("");
+  $("searchResults").querySelectorAll("tr[data-i]").forEach((row) => {
+    const t = results[Number(row.dataset.i)];
+    row.querySelector(".addbtn").onclick = async () => {
+      row.querySelector(".addbtn").disabled = true;
+      const r = await fetch("/api/addtrack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tracks: currentSet?.order || [], add: t }),
+      });
+      if (!r.ok) { $("searchStatus").textContent = "Couldn't add that one."; return; }
+      currentSet = await r.json();
+      render(currentSet);
+      status(`Added “${t.name}” to the set at its best spot.`);
+    };
+  });
+}
+
 // --- AI suggestions ---
 $("suggest").onclick = async () => {
   if (!currentSet) return ($("suggestStatus").textContent = "Build a set first.");

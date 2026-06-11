@@ -171,6 +171,16 @@
       </div>
 
       <div class="card">
+        <h2>Search &amp; add a song</h2>
+        <div class="row tight">
+          <input id="searchq" placeholder="Search any song or artist…" style="flex:1; min-width:200px" />
+          <button id="searchBtn" class="btn-ghost btn-sm">🔍 Search</button>
+        </div>
+        <div id="searchStatus" class="muted" style="font-size:13px; margin-top:8px; min-height:18px"></div>
+        <table id="searchResults"></table>
+      </div>
+
+      <div class="card">
         <h2>AI suggestions</h2>
         <div id="suggestStatus" class="muted">Build a set, then “Suggest more” for songs that fit the vibe.</div>
         <table id="suggestions"></table>
