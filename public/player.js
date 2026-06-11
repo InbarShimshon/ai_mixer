@@ -439,6 +439,12 @@ async function refreshNow() {
   let n;
   try { n = await (await fetch("/api/now")).json(); } catch { return; }
   if (!n) return;
+  // A deleted song just came up to play → skip it instantly (current song was untouched).
+  if (n.playing && n.uri && removedUris.has(n.uri)) {
+    removedUris.delete(n.uri);
+    fetch("/api/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    return;
+  }
   lastNow = n; lastNowTs = performance.now(); // feed the live mix timeline
   if (n.name) {
     highlightNowPlaying(n.name);
@@ -643,6 +649,7 @@ async function applyOrder(newOrder) {
 
 let dragFrom = null;
 let dragFlags = null;
+const removedUris = new Set(); // deleted-but-still-queued songs — skipped when they come up
 // Auto-scroll the page while dragging near the top/bottom edge — lets you drag a
 // song all the way to the top (or bottom) of a long set.
 document.addEventListener("dragover", (e) => {
@@ -687,24 +694,18 @@ function render({ order, transitions }) {
       if (await smoothPlay(uris)) status(`${$("automix")?.checked ? "Mixed into" : "Jumped to"} “${currentSet.order[i].name}”.`);
     };
     row.querySelector(".rm").onclick = async () => {
-      const removed = currentSet.order[i].name;
-      // Capture playback position BEFORE removing, so we can re-sync Spotify's queue.
+      const t = currentSet.order[i];
       let n = {};
       try { n = await (await fetch("/api/now")).json(); } catch {}
-      const curIdx = currentSet.order.findIndex((t) => t.uri === n.uri || t.name === n.name);
+      const isPlayingThis = n.playing && (n.uri === t.uri || n.name === t.name);
       await applyOrder(currentSet.order.filter((_, k) => k !== i));
-      status(`Removed “${removed}”.`);
-      // Re-sync Spotify so a deleted song never plays — even if it was next up.
-      if (n.playing && n.uri && curIdx >= 0) {
-        if (i > curIdx) {
-          // Removed an UPCOMING song → re-queue from the current song at its position.
-          const ci = currentSet.order.findIndex((t) => t.uri === n.uri);
-          if (ci >= 0) await requeue(currentSet.order.slice(ci).map((t) => t.uri), n.uri, n.progress_ms || 0);
-        } else if (i === curIdx) {
-          // Removed the CURRENTLY playing song → jump to the next one.
-          const uris = currentSet.order.slice(i).map((t) => t.uri);
-          if (uris.length) await requeue(uris, uris[0], 0);
-        }
+      status(`Removed “${t.name}”.`);
+      // No glitch to the current song: if it's the one playing, skip it now; if it's
+      // upcoming, mark it so it's auto-skipped the instant it tries to play.
+      if (isPlayingThis) {
+        await fetch("/api/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      } else if (t.uri) {
+        removedUris.add(t.uri);
       }
     };
     row.querySelector(".target").onclick = () => suggestSpots(i);
