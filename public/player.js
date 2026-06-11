@@ -559,6 +559,7 @@ function showMixView(i) {
   const keyHtml = `Key: <b>${a.camelot || "?"}</b> → <b>${b.camelot || "?"}</b> (Camelot — adjacent numbers or same number swap = harmonic).`;
 
   let planHtml = "";
+  let transitionMs = null;
   if (ba && a.duration_ms) {
     const barSec = (4 * 60) / ba;          // 1 bar = 4 beats
     const phrase = 16;                       // mix over a 16-bar phrase
@@ -566,6 +567,7 @@ function showMixView(i) {
     const durSec = a.duration_ms / 1000;
     let start = durSec - blendSec;
     if (start < durSec * 0.5) start = durSec * 0.75;
+    transitionMs = Math.round(start * 1000);
     planHtml = `Suggested transition: start the blend at <b>${fmt(start * 1000)}</b> — the last <b>${phrase} bars</b> (~${blendSec.toFixed(0)}s) of “${a.name}”. Bring “${b.name}” in on its first downbeat. (1 bar ≈ ${barSec.toFixed(2)}s.)`;
   } else if (ba) {
     planHtml = `Suggested transition: blend over the last 16 bars (~${((4 * 60 / ba) * 16).toFixed(0)}s). Exact timestamp needs the track length — rebuild from a playlist to capture it.`;
@@ -578,9 +580,30 @@ function showMixView(i) {
     `<div class="mvrow">${planHtml}</div>` +
     `<canvas id="beatgrid" width="900" height="84"></canvas>` +
     `<div class="mvrow muted" style="font-size:12px">Top row = “${a.name}” beats · bottom = “${b.name}” beats, aligned at the blend start. Ticks lining up = beat-matched; drifting apart = the tempo gap you'd correct.</div>` +
-    `<button class="btn-ghost btn-sm" id="mvclose">Close</button>`;
+    `<div class="row tight" style="margin-top:10px">` +
+    (transitionMs != null && a.uri ? `<button class="btn-primary btn-sm" id="mvjump">▶ Hear this transition</button>` : "") +
+    `<button class="btn-ghost btn-sm" id="mvclose">Close</button></div>`;
   mv.style.display = "block";
   $("mvclose").onclick = () => (mv.style.display = "none");
+  if ($("mvjump")) {
+    $("mvjump").onclick = async () => {
+      // Play the current song from the transition point; the next song is queued
+      // right after, so you hear the actual blend (with native crossfade on).
+      const uris = currentSet.order.slice(i).map((t) => t.uri);
+      const r = await fetch("/api/play", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uris, offsetUri: a.uri, position_ms: transitionMs, device_id: deviceId() }),
+      });
+      if (r.status === 204 || r.ok) {
+        $("bar").style.display = "block";
+        startPolling();
+        status(`Jumped to the transition point of “${a.name}”.`);
+      } else {
+        status("Couldn't seek — open the Spotify desktop app and pick it as the device.");
+      }
+    };
+  }
   drawBeatGrid(ba, bb);
   mv.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
