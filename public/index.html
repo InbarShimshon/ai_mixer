@@ -7,23 +7,29 @@
     <style>
       body { font-family: -apple-system, system-ui, sans-serif; background:#0d1117; color:#e6edf3; margin:0; padding:24px; }
       h1 { font-size:20px; }
-      input { width:520px; max-width:80vw; padding:8px; border-radius:6px; border:1px solid #30363d; background:#161b22; color:#e6edf3; }
+      textarea { width:520px; max-width:90vw; height:140px; padding:10px; border-radius:6px; border:1px solid #30363d; background:#161b22; color:#e6edf3; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+      select { padding:7px; border-radius:6px; border:1px solid #30363d; background:#161b22; color:#e6edf3; }
       button { padding:8px 14px; border-radius:6px; border:0; background:#1db954; color:#fff; font-weight:600; cursor:pointer; }
       button.secondary { background:#21262d; color:#e6edf3; border:1px solid #30363d; }
       .row { display:flex; gap:8px; align-items:center; margin:12px 0; flex-wrap:wrap; }
       table { border-collapse:collapse; width:100%; margin-top:16px; font-size:13px; }
       td, th { padding:6px 10px; border-bottom:1px solid #21262d; text-align:left; }
-      .smooth { color:#3fb950; } .ok { color:#d29922; } .risky { color:#f85149; }
+      .smooth { color:#3fb950; } .ok { color:#d29922; } .risky { color:#f85149; } .unknown { color:#8b949e; }
+      #scrub { width:360px; max-width:70vw; vertical-align:middle; accent-color:#1db954; }
+      .pill { font-size:12px; color:#8b949e; }
       .now { background:#132d1c; }
       .muted { color:#8b949e; }
-      #notice { background:#161b22; border:1px solid #30363d; padding:10px 14px; border-radius:8px; font-size:13px; }
+      #notice { background:#161b22; border:1px solid #30363d; padding:10px 14px; border-radius:8px; font-size:13px; max-width:760px; }
+      code { background:#21262d; padding:1px 5px; border-radius:4px; }
     </style>
   </head>
   <body>
     <h1>🎧 Spotify AI Mixer</h1>
     <div id="notice">
-      For overlapping transitions, enable <b>Spotify → Settings → Crossfade</b> (up to 12s) in your
-      Spotify client once. This app orders tracks harmonically so that crossfade sounds like a real mix.
+      Paste a <b>Spotify playlist link</b> (or a track list, one <code>Song - Artist</code> per line).
+      The app reads it, orders the songs harmonically so they flow, and plays through your chosen
+      device. Turn on <b>Spotify desktop → Settings → Crossfade (~8–12s)</b> once for overlapping
+      transitions.
     </div>
 
     <div class="row">
@@ -32,16 +38,45 @@
     </div>
 
     <div class="row">
-      <input id="playlist" placeholder="Playlist URL or ID"
-             value="50e0ObEbA4rcaznXWS2jBX" />
+      <textarea id="lines" placeholder="https://open.spotify.com/playlist/...&#10;&#10;— or —&#10;Blinding Lights - The Weeknd&#10;One More Time - Daft Punk"></textarea>
+    </div>
+
+    <div class="row">
       <button id="build" class="secondary">2. Build AI set</button>
+      <label class="muted">Play on:</label>
+      <select id="device"></select>
       <button id="play" class="secondary">3. Play set</button>
+    </div>
+
+    <div class="row">
+      <label class="muted">Event vibe:</label>
+      <input id="context" value="wedding party" style="width:200px" />
+      <button id="suggest" class="secondary">✨ Suggest more</button>
+    </div>
+
+    <div id="suggestStatus" class="muted"></div>
+    <table id="suggestions"></table>
+
+    <div class="row" id="controls" style="display:none">
+      <button id="prev" class="secondary">⏮ Prev</button>
+      <button id="pause" class="secondary">⏸ Pause</button>
+      <button id="resume" class="secondary">▶ Resume</button>
+      <button id="next" class="secondary">⏭ Next</button>
+      <label class="muted" title="App auto-fades each song out and the next in"><input type="checkbox" id="automix" /> 🎚 Auto-mix</label>
+      <span class="muted">— or click any row to jump to that song</span>
+    </div>
+
+    <div class="row" id="scrubrow" style="display:none">
+      <span id="nowName" class="pill"></span>
+      <span id="t0" class="pill">0:00</span>
+      <input type="range" id="scrub" min="0" max="1000" value="0" />
+      <span id="t1" class="pill">0:00</span>
+      <span id="devWarn" class="pill"></span>
     </div>
 
     <div id="status" class="muted"></div>
     <table id="out"></table>
 
-    <script src="https://sdk.scdn.co/spotify-player.js"></script>
     <script src="player.js"></script>
   </body>
 </html>
