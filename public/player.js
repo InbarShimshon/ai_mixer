@@ -12,10 +12,22 @@ const fmt = (ms) => {
 
 $("login").onclick = () => (window.location.href = "/login");
 
+$("logout").onclick = async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.reload();
+};
+
 async function refreshAuthAndDevices() {
   const a = await (await fetch("/api/auth")).json();
-  if (!a.loggedIn) return ($("who").textContent = "○ not connected");
+  if (!a.loggedIn) {
+    $("who").textContent = "○ not connected";
+    $("login").style.display = "";
+    $("logout").style.display = "none";
+    return;
+  }
   $("who").textContent = "● connected";
+  $("login").style.display = "none";
+  $("logout").style.display = "";
   const d = await (await fetch("/api/devices")).json();
   const sel = $("device");
   sel.innerHTML = "";

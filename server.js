@@ -69,6 +69,36 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- Optional shared-password gate (set APP_PASSWORD to enable) ---
+const GATE_HTML = `<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>AI Mixer</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(180deg,#0e1119,#0b0d13);color:#eef1f7;font-family:system-ui,sans-serif}
+.box{width:320px;max-width:88vw;background:#141823;border:1px solid #262c3b;border-radius:14px;padding:28px;box-shadow:0 8px 30px rgba(0,0,0,.4);text-align:center}
+.logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(140deg,#7c8bff,#4b58d6);display:grid;place-items:center;margin:0 auto 14px;font-size:19px}
+h1{font-size:17px;margin:0 0 4px}p{color:#939db3;font-size:13px;margin:0 0 18px}
+input{width:100%;padding:11px 13px;border-radius:10px;border:1px solid #262c3b;background:#0e1119;color:#eef1f7;font-size:14px;margin-bottom:10px;box-sizing:border-box}
+button{width:100%;padding:11px;border:0;border-radius:10px;background:linear-gradient(180deg,#7986ff,#5a67e6);color:#fff;font-weight:600;font-size:14px;cursor:pointer}
+.err{color:#f4636b;font-size:12px;height:16px;margin-top:8px}</style></head>
+<body><form class=box onsubmit="return go(event)"><div class=logo>◧</div><h1>AI Mixer</h1><p>Enter the access password to continue.</p>
+<input id=pw type=password placeholder="Password" autofocus><button type=submit>Unlock</button><div class=err id=err></div></form>
+<script>async function go(e){e.preventDefault();const r=await fetch('/gate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('pw').value})});if(r.ok){location.href='/'}else{document.getElementById('err').textContent='Wrong password'}return false}</script>
+</body></html>`;
+
+app.post("/gate", (req, res) => {
+  if (!process.env.APP_PASSWORD) return res.json({ ok: true });
+  if (req.body.password === process.env.APP_PASSWORD) {
+    req.user.gate = true;
+    persist();
+    return res.json({ ok: true });
+  }
+  res.status(403).json({ error: "wrong password" });
+});
+
+app.use((req, res, next) => {
+  if (!process.env.APP_PASSWORD || req.user.gate || req.path === "/gate") return next();
+  if (req.path.startsWith("/api/")) return res.status(401).json({ error: "locked" });
+  res.set("Content-Type", "text/html").send(GATE_HTML);
+});
+
 app.use(express.static("public"));
 
 const basicAuth = Buffer.from(
@@ -152,6 +182,13 @@ async function authed(req, res) {
 app.get("/api/auth", async (req, res) => {
   await ensureToken(req.user);
   res.json({ loggedIn: !!req.user.tokens.access_token });
+});
+
+// Disconnect Spotify: clear this session's tokens.
+app.post("/api/logout", (req, res) => {
+  req.user.tokens = { access_token: null, refresh_token: null, expires_at: 0 };
+  persist();
+  res.json({ ok: true });
 });
 
 app.get("/api/devices", async (req, res) => {

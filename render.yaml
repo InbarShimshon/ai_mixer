@@ -20,3 +20,5 @@ services:
         sync: false
       - key: REDIRECT_URI
         sync: false
+      - key: APP_PASSWORD
+        sync: false
