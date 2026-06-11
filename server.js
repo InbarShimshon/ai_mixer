@@ -115,6 +115,7 @@ app.get("/login", (req, res) => {
     redirect_uri: REDIRECT_URI,
     scope: SCOPES,
     state: req.sid.slice(0, 16),
+    show_dialog: "true", // force re-consent so scope changes always take effect
   });
   res.redirect(`https://accounts.spotify.com/authorize?${p}`);
 });
