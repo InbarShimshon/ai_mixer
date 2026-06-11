@@ -404,8 +404,12 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
     const adventurous = Math.max(0, Math.min(100, Number(req.body.adventurous) || 30));
     const context = (req.body.context || "wedding party").slice(0, 80);
     const extra = Array.isArray(req.body.extraPlaylists) ? req.body.extraPlaylists.slice(0, 5) : [];
+    // "Must-keep" songs (already analyzed in the current set) are seeded first and
+    // never dropped, then we build the rest around them per the dial.
+    const keep = Array.isArray(req.body.keep) ? req.body.keep.filter((t) => t?.uri).slice(0, 60) : [];
 
     const pool = [];
+    keep.forEach((t) => pool.push({ uri: t.uri, name: t.name, artist: t.artist || "", bpm: t.bpm, camelot: t.camelot, energy: t.energy, duration_ms: t.duration_ms, keep: true }));
     const push = (t) => {
       if (t?.uri) pool.push({ uri: t.uri, name: t.name, artist: (t.artists || []).map((a) => a.name).join(", "), duration_ms: t.duration_ms });
     };
@@ -429,8 +433,12 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
     if (!tracks.length) return res.status(400).json({ error: "No taste found — like some songs / play more on Spotify first." });
     tracks = tracks.slice(0, 80);
 
-    let analyzed = await analyzeAll(tracks, process.env);
-    await fillMissing(analyzed);
+    // Preserve analysis on tracks that already carry it (kept songs); analyze the rest.
+    const known = tracks.filter((t) => t.bpm || t.camelot);
+    const fresh = tracks.filter((t) => !(t.bpm || t.camelot));
+    let analyzedFresh = await analyzeAll(fresh, process.env);
+    await fillMissing(analyzedFresh);
+    let analyzed = [...known, ...analyzedFresh];
 
     // Season with crowd-pleasers per the dial (0 = pure taste, 100 = max additions).
     let addedCount = 0;

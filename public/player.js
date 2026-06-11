@@ -462,17 +462,21 @@ function renderSearch(results) {
 }
 
 // --- AI suggestions ---
-$("suggest").onclick = async () => {
+let shownSuggestions = []; // accumulates so "More" gives fresh picks
+
+async function runSuggest(exclude) {
   if (!currentSet) return status("Build a set first.");
-  toast("Asking the AI for songs that fit…");
-  $("suggestStatus").textContent = "Asking the AI for songs that fit…";
+  toast(exclude?.length ? "Finding more songs…" : "Asking the AI for songs that fit…");
+  $("suggestStatus").textContent = "Asking the AI…";
   let data;
   try {
+    // Pass the set + anything already shown so the AI avoids repeats.
+    const avoid = [...currentSet.order, ...(exclude || [])];
     const r = await fetch("/api/suggest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        tracks: currentSet.order.map((t) => ({ name: t.name, artist: t.artist, bpm: t.bpm, camelot: t.camelot })),
+        tracks: avoid.map((t) => ({ name: t.name, artist: t.artist, bpm: t.bpm, camelot: t.camelot })),
         context: $("context").value || "wedding party",
       }),
     });
@@ -480,10 +484,34 @@ $("suggest").onclick = async () => {
   } catch { return status("Suggestions failed — try again."); }
   if (data.error) { $("suggestStatus").textContent = "Error: " + data.error; return toast("Error: " + data.error); }
   renderSuggestions(data.suggestions || []);
-  $("suggestStatus").textContent = `${data.suggestions.length} suggestions — ➕ inserts each at its best spot.`;
-  // The AI suggestions card is at the bottom — bring it into view.
+  shownSuggestions.push(...(data.suggestions || []));
+  $("suggestStatus").textContent = `${data.suggestions.length} suggestions — ➕ inserts each at its best spot · 🔄 More for fresh picks.`;
   $("suggestions").scrollIntoView({ behavior: "smooth", block: "center" });
   toast(`${data.suggestions.length} AI suggestions ready ↓`);
+}
+$("suggest").onclick = () => { shownSuggestions = []; runSuggest(); };
+$("moreSuggest").onclick = () => runSuggest(shownSuggestions);
+
+// --- Build around must-keep (locked) songs ---
+function updateKeepCount() {
+  const n = (currentSet?.order || []).filter((t) => t.keep).length;
+  if ($("buildKeep")) $("buildKeep").textContent = `🔒 Build around kept (${n})`;
+}
+$("buildKeep").onclick = async () => {
+  const keep = (currentSet?.order || []).filter((t) => t.keep);
+  if (!keep.length) return status("Lock songs first — click 🔓→🔒 on the rows you want kept.");
+  status(`Building a new set around your ${keep.length} kept song${keep.length === 1 ? "" : "s"}…`);
+  const r = await fetch("/api/taste-set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ keep, adventurous: +$("dial").value, context: $("context").value || "wedding party" }),
+  });
+  const data = await r.json();
+  if (data.error === "reconnect") return status("Reconnect Spotify (Disconnect → Connect) to read your taste.");
+  if (data.error) return status("Error: " + JSON.stringify(data.error));
+  currentSet = data;
+  render(data);
+  status(`Rebuilt around ${keep.length} kept songs + your taste/crowd-pleasers (dial: ${$("dialLabel").textContent}).`);
 };
 
 function renderSuggestions(list) {
@@ -536,6 +564,14 @@ async function applyOrder(newOrder) {
 
 let dragFrom = null;
 let dragFlags = null;
+// Auto-scroll the page while dragging near the top/bottom edge — lets you drag a
+// song all the way to the top (or bottom) of a long set.
+document.addEventListener("dragover", (e) => {
+  if (dragFrom === null) return;
+  const m = 90;
+  if (e.clientY < m) window.scrollBy(0, -16);
+  else if (e.clientY > window.innerHeight - m) window.scrollBy(0, 16);
+});
 
 function render({ order, transitions }) {
   $("spots").innerHTML = "";
@@ -545,17 +581,19 @@ function render({ order, transitions }) {
   const guests = order.filter((t) => t.guest).length;
   $("guestBadge").style.display = guests ? "inline-block" : "none";
   $("guestBadge").textContent = `👤 ${guests} guest pick${guests === 1 ? "" : "s"}`;
-  const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th></th><th></th></tr>`];
+  updateKeepCount();
+  const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th>🔒</th><th></th><th></th></tr>`];
   order.forEach((t, i) => {
     const tr = transitions[i];
     const flag = tr ? `<span class="badge click ${tr.flag}" title="See the BPM/beat alignment & best transition point">${tr.flag} ⟶</span>` : "—";
     rows.push(
-      `<tr draggable="true" data-idx="${i}" data-name="${(t.name || "").replace(/"/g, "")}">
+      `<tr draggable="true" data-idx="${i}" data-name="${(t.name || "").replace(/"/g, "")}" class="${t.keep ? "keptrow" : ""}">
         <td class="handle" title="Drag to reorder">⠿</td>
         <td class="muted">${i + 1}</td>
         <td class="jump" title="Click to play from here">${t.name}${t.guest ? '<span class="guesttag">guest</span>' : ""}</td>
         <td class="muted">${t.artist}</td>
         <td>${t.bpm ?? "?"}</td><td>${t.camelot ?? "?"}</td><td>${flag}</td>
+        <td class="lock" title="Lock — keep this song when you 'Build around kept'">${t.keep ? "🔒" : "🔓"}</td>
         <td class="target" title="Suggest smooth spots for this song">🎯</td>
         <td class="rm" title="Remove">✕</td>
       </tr>`
@@ -575,6 +613,13 @@ function render({ order, transitions }) {
       status(`Removed “${removed}”.`);
     };
     row.querySelector(".target").onclick = () => suggestSpots(i);
+    row.querySelector(".lock").onclick = (e) => {
+      const t = currentSet.order[i];
+      t.keep = !t.keep;
+      e.target.textContent = t.keep ? "🔒" : "🔓";
+      row.classList.toggle("keptrow", t.keep);
+      updateKeepCount();
+    };
     const fl = row.querySelector(".badge.click");
     if (fl) fl.onclick = () => showMixView(i);
 
@@ -783,26 +828,41 @@ function showMixView(i) {
     `<canvas id="beatgrid" width="900" height="84"></canvas>` +
     `<div class="mvrow muted" style="font-size:12px">Top row = “${a.name}” beats · bottom = “${b.name}” beats, aligned at the blend start. Ticks lining up = beat-matched; drifting apart = the tempo gap you'd correct.</div>` +
     `<div class="row tight" style="margin-top:10px">` +
-    (transitionMs != null && a.uri ? `<button class="btn-primary btn-sm" id="mvjump">▶ Hear this transition</button>` : "") +
+    (a.uri ? `<button class="btn-primary btn-sm" id="mvjump">▶ Hear this transition</button>` : "") +
     `<button class="btn-ghost btn-sm" id="mvclose">Close</button></div>`;
   mv.style.display = "block";
   $("mvclose").onclick = () => (mv.style.display = "none");
   if ($("mvjump")) {
     $("mvjump").onclick = async () => {
-      // Play the current song from the transition point; the next song is queued
-      // right after, so you hear the actual blend (with native crossfade on).
+      // Play the current song; seek to the transition point. If we already know
+      // the length, seek immediately; otherwise start it and seek once the live
+      // now-playing reports the length — so this works even on loaded sets.
       const uris = currentSet.order.slice(i).map((t) => t.uri);
       const r = await fetch("/api/play", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uris, offsetUri: a.uri, position_ms: transitionMs, device_id: deviceId() }),
+        body: JSON.stringify({ uris, offsetUri: a.uri, position_ms: transitionMs ?? 0, device_id: deviceId() }),
       });
-      if (r.status === 204 || r.ok) {
-        $("bar").style.display = "block";
-        startPolling();
+      if (!(r.status === 204 || r.ok))
+        return status("Couldn't play — open the Spotify desktop app and pick it as the device.");
+      $("bar").style.display = "block";
+      startPolling();
+      if (transitionMs != null) {
         status(`Jumped to the transition point of “${a.name}”.`);
       } else {
-        status("Couldn't seek — open the Spotify desktop app and pick it as the device.");
+        // No stored length — read the live length and seek to ~16 bars before the end.
+        status(`Playing “${a.name}” — finding the transition point…`);
+        setTimeout(async () => {
+          try {
+            const n = await (await fetch("/api/now")).json();
+            if (n.duration_ms) {
+              const blend = a.bpm ? Math.min(n.duration_ms * 0.4, (4 * 60 / a.bpm) * 16 * 1000) : 12000;
+              const seekMs = Math.max(0, Math.round(n.duration_ms - blend));
+              await fetch("/api/seek", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position_ms: seekMs }) });
+              status(`Jumped to the transition point of “${a.name}”.`);
+            }
+          } catch {}
+        }, 1500);
       }
     };
   }
