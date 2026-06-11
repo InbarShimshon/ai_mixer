@@ -153,6 +153,10 @@ const deviceId = () => $("device").value;
 const setVol = (v) => fetch("/api/volume", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ volume_percent: v }) });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Rebuild Spotify's playback queue (e.g. after a delete) starting at offsetUri/position.
+const requeue = (uris, offsetUri, position_ms) =>
+  fetch("/api/play", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uris, offsetUri, position_ms, device_id: deviceId() }) });
+
 // Smooth jump: when Auto-mix is on, fade the old song down, switch, fade the new
 // one up — so clicking a new song blends instead of hard-cutting. (Spotify can't
 // truly overlap two streams, so this is a fade transition, not a beat-mix.)
@@ -390,10 +394,22 @@ $("loadSet").onclick = async () => {
 };
 $("delSet").onclick = async () => {
   const name = $("savedSets").value;
-  if (!name) return;
+  if (!name) return status("Pick a saved set in the dropdown first.");
+  if (!confirm(`Delete the saved playlist “${name}”? This can't be undone.`)) return;
   await fetch("/api/sets/" + encodeURIComponent(name), { method: "DELETE" });
   await loadSavedList();
-  status(`Deleted “${name}”.`);
+  status(`Deleted saved playlist “${name}”.`);
+};
+
+// Clear the current working set (start over) — does not touch saved playlists.
+$("clearSet").onclick = () => {
+  if (!currentSet?.order?.length) return status("Nothing to clear.");
+  if (!confirm("Clear the current set? (Your saved playlists stay.)")) return;
+  currentSet = { count: 0, order: [], transitions: [] };
+  render(currentSet);
+  $("suggestions").innerHTML = "";
+  $("spots").innerHTML = "";
+  status("Cleared the current set.");
 };
 
 // --- Now-playing poll (1s, drives scrubber + auto-mix) ---
@@ -658,8 +674,24 @@ function render({ order, transitions }) {
     };
     row.querySelector(".rm").onclick = async () => {
       const removed = currentSet.order[i].name;
+      // Capture playback position BEFORE removing, so we can re-sync Spotify's queue.
+      let n = {};
+      try { n = await (await fetch("/api/now")).json(); } catch {}
+      const curIdx = currentSet.order.findIndex((t) => t.uri === n.uri || t.name === n.name);
       await applyOrder(currentSet.order.filter((_, k) => k !== i));
       status(`Removed “${removed}”.`);
+      // Re-sync Spotify so a deleted song never plays — even if it was next up.
+      if (n.playing && n.uri && curIdx >= 0) {
+        if (i > curIdx) {
+          // Removed an UPCOMING song → re-queue from the current song at its position.
+          const ci = currentSet.order.findIndex((t) => t.uri === n.uri);
+          if (ci >= 0) await requeue(currentSet.order.slice(ci).map((t) => t.uri), n.uri, n.progress_ms || 0);
+        } else if (i === curIdx) {
+          // Removed the CURRENTLY playing song → jump to the next one.
+          const uris = currentSet.order.slice(i).map((t) => t.uri);
+          if (uris.length) await requeue(uris, uris[0], 0);
+        }
+      }
     };
     row.querySelector(".target").onclick = () => suggestSpots(i);
     row.querySelector(".lock").onclick = (e) => {
