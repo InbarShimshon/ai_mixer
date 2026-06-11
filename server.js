@@ -413,15 +413,19 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
     const push = (t) => {
       if (t?.uri) pool.push({ uri: t.uri, name: t.name, artist: (t.artists || []).map((a) => a.name).join(", "), duration_ms: t.duration_ms });
     };
-    // Top tracks = strongest taste signal
+    // Taste signal: top tracks (recent + all-time) + a good chunk of liked songs.
     let r = await spotify(user, "/me/top/tracks?limit=50&time_range=medium_term");
     let d = await r.json();
     if (d.error?.status === 403) return res.status(403).json({ error: "reconnect" });
     (d.items || []).forEach(push);
-    // Liked / saved songs
-    r = await spotify(user, "/me/tracks?limit=50");
-    d = await r.json();
-    (d.items || []).forEach((it) => push(it.track));
+    r = await spotify(user, "/me/top/tracks?limit=50&time_range=long_term");
+    (await r.json()).items?.forEach(push);
+    for (const offset of [0, 50, 100]) {
+      r = await spotify(user, `/me/tracks?limit=50&offset=${offset}`);
+      const p = await r.json();
+      (p.items || []).forEach((it) => push(it.track));
+      if (!p.next) break;
+    }
     // Any playlists the host pasted/picked
     for (const url of extra) {
       const pid = playlistIdFrom(url);
@@ -432,13 +436,13 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
     let allPool = pool.filter((t) => t.uri && !seen.has(t.uri) && seen.add(t.uri));
     if (!allPool.length) return res.status(400).json({ error: "No taste found — like some songs / play more on Spotify first." });
 
-    // The dial sets the RATIO of a ~32-song set: 0 = all your music, 100 = mostly
-    // crowd-pleasers. Kept songs always stay; the rest split by the dial.
-    const TOTAL = 32;
+    // A full party set (~60 songs ≈ 4 hours). The dial sets the RATIO: 0 = all your
+    // music, 100 = mostly crowd-pleasers. Kept songs always stay; rest split by dial.
+    const TOTAL = Math.max(40, Math.min(70, Number(req.body.total) || 60));
     const keptPool = allPool.filter((t) => t.keep);
     const tastePool = allPool.filter((t) => !t.keep); // top tracks first (strongest taste)
     const remaining = Math.max(8, TOTAL - keptPool.length);
-    const crowdCount = Math.min(25, Math.round((remaining * adventurous) / 100));
+    const crowdCount = Math.min(45, Math.round((remaining * adventurous) / 100));
     const tasteCount = Math.max(0, remaining - crowdCount);
 
     // My-music portion = kept + a slice of taste per the ratio.
