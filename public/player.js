@@ -761,6 +761,24 @@ function render({ order, transitions }) {
 
 // --- Live mix timeline (GarageBand-style: current clip + next crossing over) ---
 let lastNow = null, lastNowTs = 0;
+let lastMixMap = null;
+// Click the Live Mix timeline to move playback to that point in the current song.
+{
+  const c = $("mixtimeline");
+  if (c) {
+    c.style.cursor = "pointer";
+    c.addEventListener("click", (e) => {
+      if (!lastMixMap || !lastNow?.duration_ms) return;
+      const rect = c.getBoundingClientRect();
+      const cx = ((e.clientX - rect.left) / rect.width) * lastMixMap.canvasW;
+      let ms = ((cx - lastMixMap.pad) / lastMixMap.w) * lastMixMap.total;
+      ms = Math.max(0, Math.min(lastMixMap.durA, ms)); // clamp to the current song
+      fetch("/api/seek", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position_ms: Math.round(ms) }) });
+      if (lastNow.playing) { lastNow.progress_ms = ms; lastNowTs = performance.now(); } // snap the playhead
+      status(`Moved to ${fmt(ms)} in “${lastNow.name}”.`);
+    });
+  }
+}
 function roundRect(ctx, x, y, w, h, r, fill) {
   if (w < 1) return;
   r = Math.min(r, w / 2, h / 2);
@@ -807,6 +825,7 @@ function drawMixTimeline(n) {
   const pad = 12, w = W - 2 * pad;
   const X = (ms) => pad + (ms / total) * w;
   const ayMid = 50, byMid = 100, laneH = 38;
+  lastMixMap = { total, pad, w, durA, canvasW: W }; // for click-to-seek
 
   // Lane A (current)
   roundRect(ctx, X(0), ayMid - laneH / 2, X(durA) - X(0), laneH, 8, "rgba(109,124,255,.16)");
