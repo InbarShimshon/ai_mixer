@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import crypto from "crypto";
 import { analyzeAll } from "./lib/analysis.js";
-import { orderSet, buildTransitions, bestInsertions } from "./lib/harmonic.js";
+import { orderSet, buildTransitions, bestInsertions, orderFrom } from "./lib/harmonic.js";
 import { parseInput, resolveTrack, playlistIdFrom, fetchPlaylistTracks } from "./lib/resolve.js";
 import { suggestTracks } from "./lib/suggest.js";
 import { fillMissing } from "./lib/estimate.js";
@@ -283,11 +283,14 @@ app.post("/api/order", rateLimit(20, 60000), async (req, res) => {
 app.put("/api/play", async (req, res) => {
   const user = await authed(req, res);
   if (!user) return;
-  const { uris, device_id } = req.body;
+  const { uris, device_id, offsetUri, position_ms } = req.body;
   if (!Array.isArray(uris) || uris.length > 200) return res.status(400).json({ error: "bad uris" });
+  const body = { uris };
+  if (offsetUri) body.offset = { uri: offsetUri }; // start at this track…
+  if (typeof position_ms === "number") body.position_ms = Math.max(0, Math.round(position_ms)); // …at this point
   const r = await spotify(user, `/me/player/play${device_id ? `?device_id=${encodeURIComponent(device_id)}` : ""}`, {
     method: "PUT",
-    body: JSON.stringify({ uris }),
+    body: JSON.stringify(body),
   });
   res.status(r.status).json(r.status === 204 ? { ok: true } : await r.json().catch(() => ({})));
 });
@@ -307,6 +310,19 @@ app.post("/api/reorder", (req, res) => {
 
 app.post("/api/transitions", (req, res) => {
   const order = req.body.tracks || [];
+  res.json({ count: order.length, order, transitions: buildTransitions(order) });
+});
+
+// "Improve": keep everything up to & including the current song, then reshuffle
+// the not-yet-played songs into the smoothest BPM/key flow from the current one.
+app.post("/api/improve", (req, res) => {
+  const tracks = req.body.tracks || [];
+  let i = Number.isInteger(req.body.fromIndex) ? req.body.fromIndex : 0;
+  i = Math.max(0, Math.min(i, tracks.length - 1));
+  const keep = tracks.slice(0, i + 1);
+  const anchor = tracks[i];
+  const pool = tracks.slice(i + 1);
+  const order = [...keep, ...(anchor ? orderFrom(anchor, pool) : pool)];
   res.json({ count: order.length, order, transitions: buildTransitions(order) });
 });
 

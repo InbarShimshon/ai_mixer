@@ -141,6 +141,38 @@ $("play").onclick = async () => {
     status("Playing the AI-ordered set.");
 };
 
+// Improve: reshuffle only the not-yet-played songs into the smoothest BPM/key
+// flow from the current song, then re-queue so it actually takes effect.
+$("improve").onclick = async () => {
+  if (!currentSet?.order?.length) return status("Build a set first.");
+  let fromIndex = 0, cur = null, pos = 0, playing = false;
+  try {
+    const n = await (await fetch("/api/now")).json();
+    playing = !!n.playing;
+    if (n.name) {
+      const idx = currentSet.order.findIndex((t) => t.uri === n.uri || t.name === n.name);
+      if (idx >= 0) { fromIndex = idx; cur = currentSet.order[idx]; pos = n.progress_ms || 0; }
+    }
+  } catch {}
+  const r = await fetch("/api/improve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tracks: currentSet.order, fromIndex }),
+  });
+  currentSet = await r.json();
+  render(currentSet);
+  const moved = currentSet.order.length - fromIndex - 1;
+  status(`Reshuffled the ${moved} upcoming song${moved === 1 ? "" : "s"} for the smoothest BPM/key flow.`);
+  // Re-queue the new order while keeping the current song where it is.
+  if (playing && cur) {
+    await fetch("/api/play", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uris: currentSet.order.map((t) => t.uri), offsetUri: cur.uri, position_ms: pos, device_id: deviceId() }),
+    });
+  }
+};
+
 $("pause").onclick = () => ctl("/api/pause", "PUT");
 $("resume").onclick = () => ctl("/api/resume", "PUT");
 $("next").onclick = () => ctl("/api/next", "POST");

@@ -189,6 +189,16 @@
       </header>
 
       <div class="card">
+        <h2>🔍 Search &amp; add a song</h2>
+        <div class="row tight">
+          <input id="searchq" placeholder="Search any song or artist…" style="flex:1; min-width:200px" />
+          <button id="searchBtn" class="btn-ghost btn-sm">Search</button>
+        </div>
+        <div id="searchStatus"></div>
+        <table id="searchResults"></table>
+      </div>
+
+      <div class="card">
         <h2><span class="step">01</span> Source</h2>
         <div id="notice">
           Pick a playlist, paste a <b>Spotify link</b>, or search songs below. For the smoothest blend,
@@ -209,6 +219,7 @@
         <div class="row">
           <button id="build" class="btn-primary">Build AI set</button>
           <button id="play" class="btn-ghost">▶&nbsp; Play set</button>
+          <button id="improve" class="btn-ghost">🔀&nbsp; Improve order</button>
           <button id="suggest" class="btn-ghost">✨&nbsp; Suggest more</button>
         </div>
         <div id="status"></div>
@@ -230,16 +241,6 @@
         <div id="spots"></div>
         <div id="emptyState" class="empty"><div class="ic">🎚️</div><p>No set yet — pick a playlist, paste a link, or search a song to begin.</p></div>
         <table id="out"></table>
-      </div>
-
-      <div class="card">
-        <h2>Search &amp; add a song</h2>
-        <div class="row tight">
-          <input id="searchq" placeholder="Search any song or artist…" style="flex:1; min-width:200px" />
-          <button id="searchBtn" class="btn-ghost btn-sm">🔍 Search</button>
-        </div>
-        <div id="searchStatus"></div>
-        <table id="searchResults"></table>
       </div>
 
       <div class="card">
