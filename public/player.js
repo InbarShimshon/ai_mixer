@@ -150,6 +150,20 @@ $("build").onclick = async () => {
 
 const deviceId = () => $("device").value;
 
+const setVol = (v) => fetch("/api/volume", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ volume_percent: v }) });
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Smooth jump: when Auto-mix is on, fade the old song down, switch, fade the new
+// one up — so clicking a new song blends instead of hard-cutting. (Spotify can't
+// truly overlap two streams, so this is a fade transition, not a beat-mix.)
+async function smoothPlay(uris) {
+  if (!$("automix")?.checked) return play(uris); // instant when Auto-mix is off
+  await setVol(40); await wait(180); await setVol(15);
+  const ok = await play(uris);
+  await wait(150); setVol(45); setTimeout(() => setVol(BASE_VOL), 550);
+  return ok;
+}
+
 async function play(uris) {
   const r = await fetch("/api/play", {
     method: "PUT",
@@ -605,7 +619,7 @@ function render({ order, transitions }) {
     const i = Number(row.dataset.idx);
     row.querySelector(".jump").onclick = async () => {
       const uris = currentSet.order.slice(i).map((t) => t.uri);
-      if (await play(uris)) status(`Jumped to “${currentSet.order[i].name}”.`);
+      if (await smoothPlay(uris)) status(`${$("automix")?.checked ? "Mixed into" : "Jumped to"} “${currentSet.order[i].name}”.`);
     };
     row.querySelector(".rm").onclick = async () => {
       const removed = currentSet.order[i].name;
