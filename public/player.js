@@ -265,7 +265,7 @@ function startPolling() {
   if (polling) return;
   polling = true;
   const tick = async () => {
-    await refreshNow();
+    try { await refreshNow(); } catch (e) { /* never let the loop die */ }
     setTimeout(tick, 1000);
   };
   tick();
@@ -273,9 +273,10 @@ function startPolling() {
 async function refreshNow() {
   let n;
   try { n = await (await fetch("/api/now")).json(); } catch { return; }
+  if (!n) return;
   if (n.name) {
     highlightNowPlaying(n.name);
-    $("nowName").textContent = "▶ " + n.name;
+    $("nowName").textContent = (n.playing ? "▶ " : "⏸ ") + n.name;
   }
   if (!scrubbing && n.duration_ms) {
     $("scrub").max = n.duration_ms;
