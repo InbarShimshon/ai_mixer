@@ -24,6 +24,8 @@ const SCOPES = [
   "user-read-playback-state",
   "playlist-read-private",
   "playlist-read-collaborative",
+  "user-library-read",
+  "user-top-read",
 ].join(" ");
 
 // Security headers on every response.
@@ -383,6 +385,70 @@ app.delete("/api/sets/:name", (req, res) => {
   delete req.user.sets[req.params.name];
   persist();
   res.json({ ok: true });
+});
+
+// Build a party set from the host's TASTE (liked + top tracks + chosen playlists),
+// then season with AI crowd-pleasers per the "adventurous" dial, and order it.
+app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
+  try {
+    const user = await authed(req, res);
+    if (!user) return;
+    const adventurous = Math.max(0, Math.min(100, Number(req.body.adventurous) || 30));
+    const context = (req.body.context || "wedding party").slice(0, 80);
+    const extra = Array.isArray(req.body.extraPlaylists) ? req.body.extraPlaylists.slice(0, 5) : [];
+
+    const pool = [];
+    const push = (t) => {
+      if (t?.uri) pool.push({ uri: t.uri, name: t.name, artist: (t.artists || []).map((a) => a.name).join(", "), duration_ms: t.duration_ms });
+    };
+    // Top tracks = strongest taste signal
+    let r = await spotify(user, "/me/top/tracks?limit=50&time_range=medium_term");
+    let d = await r.json();
+    if (d.error?.status === 403) return res.status(403).json({ error: "reconnect" });
+    (d.items || []).forEach(push);
+    // Liked / saved songs
+    r = await spotify(user, "/me/tracks?limit=50");
+    d = await r.json();
+    (d.items || []).forEach((it) => push(it.track));
+    // Any playlists the host pasted/picked
+    for (const url of extra) {
+      const pid = playlistIdFrom(url);
+      if (pid) { try { (await fetchPlaylistTracks(pid)).forEach((t) => pool.push(t)); } catch {} }
+    }
+
+    const seen = new Set();
+    let tracks = pool.filter((t) => t.uri && !seen.has(t.uri) && seen.add(t.uri));
+    if (!tracks.length) return res.status(400).json({ error: "No taste found — like some songs / play more on Spotify first." });
+    tracks = tracks.slice(0, 80);
+
+    let analyzed = await analyzeAll(tracks, process.env);
+    await fillMissing(analyzed);
+
+    // Season with crowd-pleasers per the dial (0 = pure taste, 100 = max additions).
+    let addedCount = 0;
+    if (adventurous > 0) {
+      const count = Math.max(1, Math.round((adventurous / 100) * 12));
+      const { suggestions } = await suggestTracks(analyzed, {
+        context: `${context}. Add crowd-pleasers that fit this host's taste and lift the party.`,
+        count,
+      });
+      const adds = [];
+      for (let i = 0; i < (suggestions || []).length; i += 4) {
+        const batch = suggestions.slice(i, i + 4);
+        const hits = await Promise.all(batch.map((s) => resolveTrack(s, user.tokens.access_token)));
+        hits.forEach((h) => { if (h?.uri && !seen.has(h.uri)) { seen.add(h.uri); adds.push(h); } });
+      }
+      let addAnalyzed = await analyzeAll(adds, process.env);
+      await fillMissing(addAnalyzed);
+      addedCount = addAnalyzed.length;
+      analyzed = analyzed.concat(addAnalyzed);
+    }
+
+    const { order, transitions } = orderSet(analyzed);
+    res.json({ count: order.length, addedCount, order, transitions });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 // AI suggestions.

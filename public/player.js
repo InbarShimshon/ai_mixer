@@ -106,6 +106,30 @@ $("playlists").onchange = () => {
   sel.value = ""; // reset so the next pick adds another
 };
 
+// "My music ⟷ Crowd-pleasers" dial label.
+$("dial").oninput = () => {
+  const v = +$("dial").value;
+  $("dialLabel").textContent = v < 15 ? "all my music" : v < 40 ? "mostly mine" : v < 65 ? "balanced" : v < 85 ? "adventurous" : "crowd-pleaser heavy";
+};
+
+// Build a party set from the host's real taste (liked + top tracks + any pasted playlists).
+$("taste").onclick = async () => {
+  status("Reading your taste (liked + top tracks) and building a party set…");
+  const extra = $("lines").value.split("\n").map((l) => l.trim()).filter((l) => /playlist/.test(l));
+  const r = await fetch("/api/taste-set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adventurous: +$("dial").value, context: $("context").value || "wedding party", extraPlaylists: extra }),
+  });
+  const data = await r.json();
+  if (data.error === "reconnect")
+    return status("Reconnect Spotify to allow reading your taste: click Disconnect, then Connect Spotify.");
+  if (data.error) return status("Error: " + JSON.stringify(data.error));
+  currentSet = data;
+  render(data);
+  status(`Built a ${data.count}-track party set from your taste${data.addedCount ? ` + ${data.addedCount} AI crowd-pleasers` : ""}.`);
+};
+
 $("build").onclick = async () => {
   const lines = $("lines").value;
   if (!lines.trim()) return status("Paste a playlist link or some tracks first.");
