@@ -329,6 +329,7 @@ async function refreshNow() {
   let n;
   try { n = await (await fetch("/api/now")).json(); } catch { return; }
   if (!n) return;
+  lastNow = n; lastNowTs = performance.now(); // feed the live mix timeline
   if (n.name) {
     highlightNowPlaying(n.name);
     $("nowName").textContent = (n.playing ? "▶ " : "⏸ ") + n.name;
@@ -536,6 +537,114 @@ function render({ order, transitions }) {
     });
   });
 }
+
+// --- Live mix timeline (GarageBand-style: current clip + next crossing over) ---
+let lastNow = null, lastNowTs = 0;
+function roundRect(ctx, x, y, w, h, r, fill) {
+  if (w < 1) return;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+function pseudoWave(ctx, x0, x1, yMid, color, seedStr, alpha) {
+  let seed = 7;
+  for (const ch of seedStr || "x") seed = (seed * 31 + ch.charCodeAt(0)) & 0x7fffffff;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  for (let x = x0; x < x1; x += 4) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    const h = 4 + (seed % 100) / 100 * 24;
+    ctx.fillRect(x, yMid - h / 2, 2, h);
+  }
+  ctx.globalAlpha = 1;
+}
+const trunc = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + "…" : s || "");
+
+function drawMixTimeline(n) {
+  const c = $("mixtimeline");
+  if (!c) return;
+  if (!n || !n.duration_ms || !currentSet?.order?.length) { $("mixCard").style.display = "none"; return; }
+  $("mixCard").style.display = "block";
+  const ctx = c.getContext("2d");
+  const W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const i = currentSet.order.findIndex((t) => t.uri === n.uri || t.name === n.name);
+  const cur = i >= 0 ? currentSet.order[i] : { name: n.name, bpm: null };
+  const next = i >= 0 ? currentSet.order[i + 1] : null;
+  const durA = n.duration_ms;
+  const blend = cur.bpm ? Math.min(durA * 0.4, (4 * 60 / cur.bpm) * 16 * 1000) : 12000;
+  const tA = Math.max(0, durA - blend);
+  const total = durA + blend;
+  const pad = 12, w = W - 2 * pad;
+  const X = (ms) => pad + (ms / total) * w;
+  const ayMid = 50, byMid = 100, laneH = 38;
+
+  // Lane A (current)
+  roundRect(ctx, X(0), ayMid - laneH / 2, X(durA) - X(0), laneH, 8, "rgba(109,124,255,.16)");
+  pseudoWave(ctx, X(0) + 3, X(durA) - 3, ayMid, "#5866d6", cur.name, 0.5);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(X(0), ayMid - laneH / 2, Math.max(0, X(n.progress_ms) - X(0)), laneH);
+  ctx.clip();
+  pseudoWave(ctx, X(0) + 3, X(durA) - 3, ayMid, "#9aa6ff", cur.name, 1);
+  ctx.restore();
+
+  // Lane B (next) — starts at the transition point, overlapping A's tail
+  if (next) {
+    roundRect(ctx, X(tA), byMid - laneH / 2, X(total) - X(tA), laneH, 8, "rgba(167,139,250,.16)");
+    pseudoWave(ctx, X(tA) + 3, X(total) - 3, byMid, "#a78bfa", next.name, 0.75);
+  }
+
+  // Crossfade region (overlap) — gradient + the classic crossfade "X"
+  const cx0 = X(tA), cx1 = X(durA);
+  const g = ctx.createLinearGradient(cx0, 0, cx1, 0);
+  g.addColorStop(0, "rgba(167,139,250,0)");
+  g.addColorStop(1, "rgba(167,139,250,.22)");
+  ctx.fillStyle = g;
+  ctx.fillRect(cx0, 14, cx1 - cx0, H - 28);
+  if (next) {
+    ctx.strokeStyle = "rgba(255,255,255,.45)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(cx0, ayMid - laneH / 2); ctx.lineTo(cx1, ayMid + laneH / 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx0, byMid + laneH / 2); ctx.lineTo(cx1, byMid - laneH / 2); ctx.stroke();
+    ctx.fillStyle = "#cdd4ee";
+    ctx.font = "11px Inter, sans-serif";
+    ctx.fillText("crossfade", (cx0 + cx1) / 2 - 26, 12);
+  }
+
+  // Labels
+  ctx.fillStyle = "#eef1f7";
+  ctx.font = "12px Inter, sans-serif";
+  ctx.fillText(trunc(cur.name || n.name, 46), X(0) + 6, ayMid - laneH / 2 - 5);
+  if (next) ctx.fillText("→ " + trunc(next.name, 46), X(tA) + 6, byMid + laneH / 2 + 15);
+
+  // Playhead
+  const px = X(n.progress_ms);
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(px, 6); ctx.lineTo(px, H - 6); ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.moveTo(px - 4, 6); ctx.lineTo(px + 4, 6); ctx.lineTo(px, 12); ctx.closePath(); ctx.fill();
+}
+
+// Smoothly animate the playhead between 1s polls.
+function animateTimeline() {
+  if (lastNow && lastNow.duration_ms) {
+    const n = { ...lastNow };
+    if (lastNow.playing) n.progress_ms = Math.min(lastNow.duration_ms, lastNow.progress_ms + (performance.now() - lastNowTs));
+    drawMixTimeline(n);
+  }
+  requestAnimationFrame(animateTimeline);
+}
+requestAnimationFrame(animateTimeline);
 
 // --- Transition planner: BPM/beat alignment + best transition point ---
 function showMixView(i) {
