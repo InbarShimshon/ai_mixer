@@ -112,23 +112,36 @@ $("dial").oninput = () => {
   $("dialLabel").textContent = v < 15 ? "all my music" : v < 40 ? "mostly mine" : v < 65 ? "balanced" : v < 85 ? "adventurous" : "crowd-pleaser heavy";
 };
 
+// Shared "building…" UI helper.
+async function buildBusy(btn, label, fn) {
+  const old = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = "⏳ Building…";
+  toast(label);
+  try { await fn(); } finally { btn.disabled = false; btn.innerHTML = old; }
+}
+function buildResult(data) {
+  currentSet = data;
+  render(data);
+  const mine = data.mineCount ?? (data.count - (data.addedCount || 0));
+  status(`Built ${data.count} tracks → ${mine} from your music + ${data.addedCount || 0} AI crowd-pleasers (✨ tagged). Dial: ${$("dialLabel").textContent}.`);
+  toast(`✅ Built ${data.count} tracks · ${data.addedCount || 0} added by AI`);
+}
+
 // Build a party set from the host's real taste (liked + top tracks + any pasted playlists).
-$("taste").onclick = async () => {
-  status("Reading your taste (liked + top tracks) and building a party set…");
+$("taste").onclick = () => buildBusy($("taste"), "Reading your taste → finding crowd-pleasers → ordering…", async () => {
   const extra = $("lines").value.split("\n").map((l) => l.trim()).filter((l) => /playlist/.test(l));
+  status("⏳ Reading your taste (liked + top tracks), finding crowd-pleasers, and ordering…");
   const r = await fetch("/api/taste-set", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ adventurous: +$("dial").value, context: $("context").value || "wedding party", extraPlaylists: extra }),
   });
   const data = await r.json();
-  if (data.error === "reconnect")
-    return status("Reconnect Spotify to allow reading your taste: click Disconnect, then Connect Spotify.");
+  if (data.error === "reconnect") return status("Reconnect Spotify to read your taste: Disconnect, then Connect.");
   if (data.error) return status("Error: " + JSON.stringify(data.error));
-  currentSet = data;
-  render(data);
-  status(`Built a ${data.count}-track party set from your taste${data.addedCount ? ` + ${data.addedCount} AI crowd-pleasers` : ""}.`);
-};
+  buildResult(data);
+});
 
 $("build").onclick = async () => {
   const lines = $("lines").value;
@@ -562,21 +575,22 @@ function updateKeepCount() {
   const n = (currentSet?.order || []).filter((t) => t.keep).length;
   if ($("buildKeep")) $("buildKeep").textContent = `🔒 Build around kept (${n})`;
 }
-$("buildKeep").onclick = async () => {
+$("buildKeep").onclick = () => {
   const keep = (currentSet?.order || []).filter((t) => t.keep);
   if (!keep.length) return status("Lock songs first — click 🔓→🔒 on the rows you want kept.");
-  status(`Building a new set around your ${keep.length} kept song${keep.length === 1 ? "" : "s"}…`);
-  const r = await fetch("/api/taste-set", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ keep, adventurous: +$("dial").value, context: $("context").value || "wedding party" }),
+  buildBusy($("buildKeep"), `Building around your ${keep.length} kept song${keep.length === 1 ? "" : "s"}…`, async () => {
+    status(`⏳ Keeping your ${keep.length} locked songs, adding taste + crowd-pleasers, ordering…`);
+    const r = await fetch("/api/taste-set", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keep, adventurous: +$("dial").value, context: $("context").value || "wedding party" }),
+    });
+    const data = await r.json();
+    if (data.error === "reconnect") return status("Reconnect Spotify (Disconnect → Connect) to read your taste.");
+    if (data.error) return status("Error: " + JSON.stringify(data.error));
+    buildResult(data);
+    status(`Rebuilt: ${keep.length} kept 🔒 + ${data.mineCount - keep.length} from your music + ${data.addedCount || 0} AI ✨ (dial: ${$("dialLabel").textContent}).`);
   });
-  const data = await r.json();
-  if (data.error === "reconnect") return status("Reconnect Spotify (Disconnect → Connect) to read your taste.");
-  if (data.error) return status("Error: " + JSON.stringify(data.error));
-  currentSet = data;
-  render(data);
-  status(`Rebuilt around ${keep.length} kept songs + your taste/crowd-pleasers (dial: ${$("dialLabel").textContent}).`);
 };
 
 function renderSuggestions(list) {
@@ -655,7 +669,7 @@ function render({ order, transitions }) {
       `<tr draggable="true" data-idx="${i}" data-name="${(t.name || "").replace(/"/g, "")}" class="${t.keep ? "keptrow" : ""}">
         <td class="handle" title="Drag to reorder">⠿</td>
         <td class="muted">${i + 1}</td>
-        <td class="jump" title="Click to play from here">${t.name}${t.guest ? '<span class="guesttag">guest</span>' : ""}</td>
+        <td class="jump" title="Click to play from here">${t.name}${t.added ? '<span class="addedtag">✨ AI</span>' : ""}${t.guest ? '<span class="guesttag">guest</span>' : ""}</td>
         <td class="muted">${t.artist}</td>
         <td>${t.bpm ?? "?"}</td><td>${t.camelot ?? "?"}</td><td>${flag}</td>
         <td class="lock" title="Lock — keep this song when you 'Build around kept'">${t.keep ? "🔒" : "🔓"}</td>

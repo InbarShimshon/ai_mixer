@@ -429,24 +429,32 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
     }
 
     const seen = new Set();
-    let tracks = pool.filter((t) => t.uri && !seen.has(t.uri) && seen.add(t.uri));
-    if (!tracks.length) return res.status(400).json({ error: "No taste found — like some songs / play more on Spotify first." });
-    tracks = tracks.slice(0, 80);
+    let allPool = pool.filter((t) => t.uri && !seen.has(t.uri) && seen.add(t.uri));
+    if (!allPool.length) return res.status(400).json({ error: "No taste found — like some songs / play more on Spotify first." });
 
-    // Preserve analysis on tracks that already carry it (kept songs); analyze the rest.
+    // The dial sets the RATIO of a ~32-song set: 0 = all your music, 100 = mostly
+    // crowd-pleasers. Kept songs always stay; the rest split by the dial.
+    const TOTAL = 32;
+    const keptPool = allPool.filter((t) => t.keep);
+    const tastePool = allPool.filter((t) => !t.keep); // top tracks first (strongest taste)
+    const remaining = Math.max(8, TOTAL - keptPool.length);
+    const crowdCount = Math.min(25, Math.round((remaining * adventurous) / 100));
+    const tasteCount = Math.max(0, remaining - crowdCount);
+
+    // My-music portion = kept + a slice of taste per the ratio.
+    let tracks = [...keptPool, ...tastePool.slice(0, tasteCount)];
     const known = tracks.filter((t) => t.bpm || t.camelot);
     const fresh = tracks.filter((t) => !(t.bpm || t.camelot));
     let analyzedFresh = await analyzeAll(fresh, process.env);
     await fillMissing(analyzedFresh);
     let analyzed = [...known, ...analyzedFresh];
 
-    // Season with crowd-pleasers per the dial (0 = pure taste, 100 = max additions).
+    // Crowd-pleaser portion = AI picks (tagged so the host sees what was added).
     let addedCount = 0;
-    if (adventurous > 0) {
-      const count = Math.max(1, Math.round((adventurous / 100) * 12));
-      const { suggestions } = await suggestTracks(analyzed, {
-        context: `${context}. Add crowd-pleasers that fit this host's taste and lift the party.`,
-        count,
+    if (crowdCount > 0) {
+      const { suggestions } = await suggestTracks(analyzed.length ? analyzed : keptPool, {
+        context: `${context}. Add crowd-pleasers/party essentials that fit this host's taste and lift the room.`,
+        count: crowdCount,
       });
       const adds = [];
       for (let i = 0; i < (suggestions || []).length; i += 4) {
@@ -456,12 +464,13 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
       }
       let addAnalyzed = await analyzeAll(adds, process.env);
       await fillMissing(addAnalyzed);
+      addAnalyzed.forEach((t) => (t.added = true)); // tag AI-added crowd-pleasers
       addedCount = addAnalyzed.length;
       analyzed = analyzed.concat(addAnalyzed);
     }
 
     const { order, transitions } = orderSet(analyzed);
-    res.json({ count: order.length, addedCount, order, transitions });
+    res.json({ count: order.length, addedCount, mineCount: order.length - addedCount, order, transitions });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
