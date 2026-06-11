@@ -468,7 +468,7 @@ function render({ order, transitions }) {
   const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th></th><th></th></tr>`];
   order.forEach((t, i) => {
     const tr = transitions[i];
-    const flag = tr ? `<span class="badge ${tr.flag}">${tr.flag}</span>` : "—";
+    const flag = tr ? `<span class="badge click ${tr.flag}" title="See the BPM/beat alignment & best transition point">${tr.flag} ⟶</span>` : "—";
     rows.push(
       `<tr draggable="true" data-idx="${i}" data-name="${(t.name || "").replace(/"/g, "")}">
         <td class="handle" title="Drag to reorder">⠿</td>
@@ -495,6 +495,8 @@ function render({ order, transitions }) {
       status(`Removed “${removed}”.`);
     };
     row.querySelector(".target").onclick = () => suggestSpots(i);
+    const fl = row.querySelector(".badge.click");
+    if (fl) fl.onclick = () => showMixView(i);
 
     // --- Drag with live "is this a smooth spot?" feedback ---
     row.addEventListener("dragstart", async () => {
@@ -533,6 +535,84 @@ function render({ order, transitions }) {
       status(`Moved “${moved.name}” to position ${i + 1}.`);
     });
   });
+}
+
+// --- Transition planner: BPM/beat alignment + best transition point ---
+function showMixView(i) {
+  const a = currentSet.order[i], b = currentSet.order[i + 1];
+  if (!b) return;
+  const mv = $("mixview");
+  const ba = a.bpm, bb = b.bpm;
+
+  let bpmHtml;
+  if (ba && bb) {
+    const d = bb - ba;
+    const shift = -(d / ba) * 100; // % B must change to match A
+    const ad = Math.abs(d);
+    const v = ad <= 2 ? ["tight", "smooth"] : ad <= 5 ? ["close", "smooth"] : ad <= 10 ? ["workable", "ok"] : ["far apart", "risky"];
+    bpmHtml = `Tempo: <b>${a.name}</b> ${ba} BPM → <b>${b.name}</b> ${bb} BPM (${d >= 0 ? "+" : ""}${d} BPM). ` +
+      `Beat-match by nudging the incoming track <b>${shift >= 0 ? "+" : ""}${shift.toFixed(1)}%</b>. <span class="badge ${v[1]}">${v[0]}</span>`;
+  } else {
+    bpmHtml = `Tempo: one track has no BPM yet — rebuild the set to AI-fill it.`;
+  }
+
+  const keyHtml = `Key: <b>${a.camelot || "?"}</b> → <b>${b.camelot || "?"}</b> (Camelot — adjacent numbers or same number swap = harmonic).`;
+
+  let planHtml = "";
+  if (ba && a.duration_ms) {
+    const barSec = (4 * 60) / ba;          // 1 bar = 4 beats
+    const phrase = 16;                       // mix over a 16-bar phrase
+    const blendSec = barSec * phrase;
+    const durSec = a.duration_ms / 1000;
+    let start = durSec - blendSec;
+    if (start < durSec * 0.5) start = durSec * 0.75;
+    planHtml = `Suggested transition: start the blend at <b>${fmt(start * 1000)}</b> — the last <b>${phrase} bars</b> (~${blendSec.toFixed(0)}s) of “${a.name}”. Bring “${b.name}” in on its first downbeat. (1 bar ≈ ${barSec.toFixed(2)}s.)`;
+  } else if (ba) {
+    planHtml = `Suggested transition: blend over the last 16 bars (~${((4 * 60 / ba) * 16).toFixed(0)}s). Exact timestamp needs the track length — rebuild from a playlist to capture it.`;
+  }
+
+  mv.innerHTML =
+    `<div class="mvhead">🎚 Transition planner</div>` +
+    `<div class="mvrow">${bpmHtml}</div>` +
+    `<div class="mvrow muted">${keyHtml}</div>` +
+    `<div class="mvrow">${planHtml}</div>` +
+    `<canvas id="beatgrid" width="900" height="84"></canvas>` +
+    `<div class="mvrow muted" style="font-size:12px">Top row = “${a.name}” beats · bottom = “${b.name}” beats, aligned at the blend start. Ticks lining up = beat-matched; drifting apart = the tempo gap you'd correct.</div>` +
+    `<button class="btn-ghost btn-sm" id="mvclose">Close</button>`;
+  mv.style.display = "block";
+  $("mvclose").onclick = () => (mv.style.display = "none");
+  drawBeatGrid(ba, bb);
+  mv.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function drawBeatGrid(ba, bb) {
+  const c = $("beatgrid");
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  const W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!ba || !bb) {
+    ctx.fillStyle = "#939db3"; ctx.font = "13px Inter, sans-serif";
+    ctx.fillText("Beat grid needs BPM for both tracks.", 16, H / 2);
+    return;
+  }
+  const winSec = 8, px = W / winSec;
+  const drawRow = (bpm, y, color, label) => {
+    const beat = 60 / bpm, bar = beat * 4;
+    ctx.fillStyle = "#939db3"; ctx.font = "11px Inter, sans-serif";
+    ctx.fillText(label, 6, y - 22);
+    for (let t = 0, n = 0; t <= winSec + 1e-6; t += beat, n++) {
+      const x = t * px;
+      const downbeat = n % 4 === 0;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = downbeat ? 3 : 1.5;
+      ctx.globalAlpha = downbeat ? 1 : 0.5;
+      ctx.beginPath(); ctx.moveTo(x, y - 16); ctx.lineTo(x, y + 16); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  };
+  drawRow(ba, 30, "#6d7cff", "A · " + ba + " BPM");
+  drawRow(bb, 64, "#a78bfa", "B · " + bb + " BPM");
 }
 
 function clearDropMarks() {
