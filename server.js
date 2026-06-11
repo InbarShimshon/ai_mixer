@@ -51,7 +51,13 @@ const rateLimit = (max, windowMs) => (req, res, next) => {
 };
 
 // --- Per-user sessions (cookie sid -> { tokens, sets }), durable via lib/store ---
-const users = await loadUsers();
+// Load asynchronously so a slow/cold DB can NEVER block the server from starting
+// (a blocked startup makes Render's deploy hang forever). The server binds the
+// port immediately; users hydrate a moment later.
+const users = {};
+loadUsers()
+  .then((u) => Object.assign(users, u))
+  .catch((e) => console.error("loadUsers failed (continuing with empty):", e.message));
 const persist = () => saveUsers(users);
 
 app.use((req, res, next) => {
