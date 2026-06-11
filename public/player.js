@@ -196,12 +196,24 @@ $("automix").onchange = () => {
 };
 
 // --- Deep mix: transition before a song ends for a continuous DJ blend ---
+// IMPORTANT: a manual "next" does NOT trigger Spotify's crossfade — only a
+// NATURAL song end does. So instead of skipping, we seek to ~11s before the end
+// (past the song's outro), letting native crossfade blend into the next track.
+// Requires Spotify desktop Crossfade to be ON.
 let deepAdvancedUri = null;
+const BLEND_TAIL_MS = 11000; // align with a ~10–12s native crossfade
 function deepMix(n) {
   if (!$("deepmix").checked || !n.playing || !n.duration_ms || !n.uri) return;
-  if (n.progress_ms / n.duration_ms >= 0.8 && deepAdvancedUri !== n.uri) {
-    deepAdvancedUri = n.uri; // advance once per track
-    fetch("/api/next", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  if (deepAdvancedUri === n.uri) return;
+  const blendStart = n.duration_ms - BLEND_TAIL_MS;
+  // Once past ~80% and there's still outro to skip, jump to the blend point.
+  if (n.progress_ms >= n.duration_ms * 0.8 && blendStart > n.progress_ms + 1500) {
+    deepAdvancedUri = n.uri; // once per track
+    fetch("/api/seek", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ position_ms: blendStart }),
+    });
   }
 }
 
