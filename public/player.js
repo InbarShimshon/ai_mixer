@@ -915,32 +915,31 @@ function showMixView(i) {
   $("mvclose").onclick = () => (mv.style.display = "none");
   if ($("mvjump")) {
     $("mvjump").onclick = async () => {
-      // Play the current song; seek to the transition point. If we already know
-      // the length, seek immediately; otherwise start it and seek once the live
-      // now-playing reports the length — so this works even on loaded sets.
+      // Preview the transition: jump to ~14s before the end so you hear the
+      // crossover almost immediately (the next song is queued right after).
+      const HEAR_LEAD = 14000;
+      const hearMs = a.duration_ms ? Math.max(0, a.duration_ms - HEAR_LEAD) : null;
       const uris = currentSet.order.slice(i).map((t) => t.uri);
       const r = await fetch("/api/play", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uris, offsetUri: a.uri, position_ms: transitionMs ?? 0, device_id: deviceId() }),
+        body: JSON.stringify({ uris, offsetUri: a.uri, position_ms: hearMs ?? 0, device_id: deviceId() }),
       });
       if (!(r.status === 204 || r.ok))
         return status("Couldn't play — open the Spotify desktop app and pick it as the device.");
       $("bar").style.display = "block";
       startPolling();
-      if (transitionMs != null) {
-        status(`Jumped to the transition point of “${a.name}”.`);
+      if (hearMs != null) {
+        status(`Previewing “${a.name}” → “${b.name}”. (Turn on Spotify Crossfade for the blend.)`);
       } else {
-        // No stored length — read the live length and seek to ~16 bars before the end.
-        status(`Playing “${a.name}” — finding the transition point…`);
+        // No stored length — start it, then read the live length and seek near the end.
+        status(`Playing “${a.name}” — cueing the transition…`);
         setTimeout(async () => {
           try {
             const n = await (await fetch("/api/now")).json();
             if (n.duration_ms) {
-              const blend = a.bpm ? Math.min(n.duration_ms * 0.4, (4 * 60 / a.bpm) * 16 * 1000) : 12000;
-              const seekMs = Math.max(0, Math.round(n.duration_ms - blend));
-              await fetch("/api/seek", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position_ms: seekMs }) });
-              status(`Jumped to the transition point of “${a.name}”.`);
+              await fetch("/api/seek", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position_ms: Math.max(0, n.duration_ms - HEAR_LEAD) }) });
+              status(`Previewing “${a.name}” → “${b.name}”. (Turn on Spotify Crossfade for the blend.)`);
             }
           } catch {}
         }, 1500);
