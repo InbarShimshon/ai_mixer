@@ -771,20 +771,27 @@ function clearDropMarks() {
 // Ask the server for the smoothest spots to move track `i` to, show as chips.
 async function suggestSpots(i) {
   const song = currentSet.order[i].name;
-  const r = await fetch("/api/bestspots", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tracks: currentSet.order, index: i }),
-  });
-  const { spots, others } = await r.json();
-  // Show only the few smoothest options (spots are sorted best-first).
+  toast(`Finding the best spots for “${song}”…`);
+  let data;
+  try {
+    const r = await fetch("/api/bestspots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tracks: currentSet.order, index: i }),
+    });
+    data = await r.json();
+  } catch { return toast("Couldn't load best spots."); }
+  const { spots, others } = data;
+  if (!spots?.length) return toast("No spots found.");
   const top = spots.slice(0, 5);
-  const chips = [`<span class="chip head">Best spots for “${song}”:</span>`];
+  const chips = [`<span class="chip head">Best spots for “${song}” — click one to move it:</span>`];
   top.forEach((s) => {
     const where = s.pos === 0 ? "at the very start" : `after “${others[s.pos - 1].name}”`;
     chips.push(`<span class="chip" data-pos="${s.pos}"><span class="badge ${s.flag}">${s.flag}</span> ${where}</span>`);
   });
   $("spots").innerHTML = chips.join("");
+  // The chips render at the top of the set — bring them into view so the click is visible.
+  $("spots").scrollIntoView({ behavior: "smooth", block: "center" });
   $("spots").querySelectorAll(".chip[data-pos]").forEach((chip) => {
     chip.onclick = async () => {
       const pos = Number(chip.dataset.pos);
