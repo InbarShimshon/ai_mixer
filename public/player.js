@@ -430,6 +430,41 @@ async function refreshNow() {
       : "";
   autoMix(n);
   deepMix(n);
+  maybeAutoExtend(n);
+}
+
+// --- Auto-extend: when the set reaches its last song, add a fitting one + queue it ---
+let extendedForUri = null;
+let extending = false;
+async function maybeAutoExtend(n) {
+  if (!$("keepgoing")?.checked || extending || !n.playing || !n.uri || !currentSet?.order?.length) return;
+  const idx = currentSet.order.findIndex((t) => t.uri === n.uri || t.name === n.name);
+  const isLast = idx === currentSet.order.length - 1;
+  if (!isLast || extendedForUri === n.uri) return;
+  extendedForUri = n.uri;
+  extending = true;
+  try {
+    const r = await fetch("/api/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tracks: currentSet.order.map((t) => ({ name: t.name, artist: t.artist, bpm: t.bpm, camelot: t.camelot })),
+        context: ($("context").value || "wedding party") + ". Suggest ONE song that transitions smoothly from the last track and keeps the energy.",
+      }),
+    });
+    const data = await r.json();
+    const pick = (data.suggestions || [])[0];
+    if (pick?.uri && !currentSet.order.some((t) => t.uri === pick.uri)) {
+      currentSet.order.push({ ...pick, auto: true });
+      currentSet = await (await fetch("/api/transitions", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tracks: currentSet.order }),
+      })).json();
+      render(currentSet);
+      await fetch("/api/queue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uri: pick.uri }) });
+      toast(`♾️ Auto-added “${pick.name}” — party keeps going`);
+    }
+  } catch {}
+  extending = false;
 }
 
 // --- General song search ---

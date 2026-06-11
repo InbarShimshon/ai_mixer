@@ -116,7 +116,8 @@
       td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,.045); vertical-align: middle; }
       tbody tr { transition: background .12s, box-shadow .12s; }
       tbody tr:hover { background: rgba(255,255,255,.03); }
-      tr.now { background: linear-gradient(90deg, rgba(109,124,255,.16), transparent 80%) !important; box-shadow: inset 3px 0 0 var(--accent); }
+      tr.now { background: linear-gradient(90deg, rgba(69,212,131,.22), rgba(69,212,131,.06) 80%) !important; box-shadow: inset 4px 0 0 var(--smooth); }
+      tr.now td:nth-child(3)::after { content: " ▶"; color: var(--smooth); font-size: 11px; }
       tr.dragging { opacity: .35; }
       tr.drop-smooth { box-shadow: inset 0 3px 0 var(--smooth); }
       tr.drop-ok { box-shadow: inset 0 3px 0 var(--ok); }
@@ -323,6 +324,7 @@
         <button id="next" class="btn-ghost ico" title="Next">⏭</button>
         <label class="toggle" title="App fades each song out and the next in"><input type="checkbox" id="automix" /> 🎚 Auto-mix</label>
         <label class="toggle" title="Skips each song's outro into the native crossfade — turn Spotify Crossfade ON for this to blend"><input type="checkbox" id="deepmix" /> 🔀 Deep mix</label>
+        <label class="toggle" title="When the set nears its end, auto-add a fitting song so the party never stops"><input type="checkbox" id="keepgoing" checked /> ♾️ Keep going</label>
         <span id="devWarn"></span>
       </div>
     </div>

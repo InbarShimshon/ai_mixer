@@ -567,6 +567,16 @@ app.post("/api/previous", async (req, res) => {
   const r = await spotify(user, `/me/player/previous${dq(req.body.device_id)}`, { method: "POST" });
   res.status(r.status).json({ ok: r.status === 204 });
 });
+// Add a track to Spotify's up-next queue (no interruption) — used by auto-extend.
+app.post("/api/queue", async (req, res) => {
+  const user = await authed(req, res);
+  if (!user) return;
+  const { uri } = req.body;
+  if (!uri) return res.status(400).json({ error: "no uri" });
+  const r = await spotify(user, `/me/player/queue?uri=${encodeURIComponent(uri)}`, { method: "POST" });
+  res.status(r.status).json({ ok: r.status === 204 });
+});
+
 app.put("/api/seek", async (req, res) => {
   const user = await authed(req, res); if (!user) return;
   const r = await spotify(user, `/me/player/seek?position_ms=${Math.max(0, Math.round(req.body.position_ms))}`, { method: "PUT" });
