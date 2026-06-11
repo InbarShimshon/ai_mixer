@@ -24,6 +24,8 @@ const SCOPES = [
   "user-read-playback-state",
   "playlist-read-private",
   "playlist-read-collaborative",
+  "playlist-modify-private",
+  "playlist-modify-public",
   "user-library-read",
   "user-top-read",
 ].join(" ");
@@ -585,6 +587,27 @@ app.post("/api/previous", async (req, res) => {
   const r = await spotify(user, `/me/player/previous${dq(req.body.device_id)}`, { method: "POST" });
   res.status(r.status).json({ ok: r.status === 204 });
 });
+// Export the current set as a real Spotify playlist in the user's account.
+app.post("/api/export-spotify", rateLimit(6, 60000), async (req, res) => {
+  const user = await authed(req, res);
+  if (!user) return;
+  const uris = (req.body.order || []).map((t) => t.uri).filter(Boolean);
+  if (!uris.length) return res.status(400).json({ error: "empty set" });
+  const me = await (await spotify(user, "/me")).json();
+  if (!me.id) return res.status(400).json({ error: "no user" });
+  const pr = await spotify(user, `/users/${encodeURIComponent(me.id)}/playlists`, {
+    method: "POST",
+    body: JSON.stringify({ name: (req.body.name || "AI Mixer set").slice(0, 100), public: false, description: "Built with AI Mixer 🎧" }),
+  });
+  if (pr.status === 403) return res.status(403).json({ error: "reconnect" }); // missing modify scope
+  const pl = await pr.json();
+  if (!pl.id) return res.status(400).json(pl.error || { error: "create failed" });
+  for (let i = 0; i < uris.length; i += 100) {
+    await spotify(user, `/playlists/${pl.id}/tracks`, { method: "POST", body: JSON.stringify({ uris: uris.slice(i, i + 100) }) });
+  }
+  res.json({ url: pl.external_urls?.spotify, name: pl.name, count: uris.length });
+});
+
 // Add a track to Spotify's up-next queue (no interruption) — used by auto-extend.
 app.post("/api/queue", async (req, res) => {
   const user = await authed(req, res);

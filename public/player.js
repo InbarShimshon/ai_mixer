@@ -376,6 +376,28 @@ async function pollShare() {
   setTimeout(pollShare, 5000);
 }
 
+// Export the current set as a real Spotify playlist.
+$("exportSpotify").onclick = async () => {
+  if (!currentSet?.order?.length) return status("Build a set first.");
+  $("exportSpotify").disabled = true;
+  status("Creating a Spotify playlist from your set…");
+  try {
+    const r = await fetch("/api/export-spotify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: ($("setName").value || $("context").value || "AI Mixer set"), order: currentSet.order }),
+    });
+    const d = await r.json();
+    if (d.error === "reconnect") return status("Reconnect Spotify (Disconnect → Connect) to allow creating playlists.");
+    if (d.error) return status("Export failed: " + JSON.stringify(d.error));
+    status(`✅ Created Spotify playlist “${d.name}” with ${d.count} songs — opening it…`);
+    toast(`✅ Exported ${d.count} songs to Spotify`);
+    if (d.url) window.open(d.url, "_blank");
+  } finally {
+    $("exportSpotify").disabled = false;
+  }
+};
+
 // --- Saved sets ---
 async function loadSavedList() {
   const list = await (await fetch("/api/sets")).json();
