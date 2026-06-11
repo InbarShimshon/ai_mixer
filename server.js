@@ -223,14 +223,31 @@ app.post("/api/order", rateLimit(20, 60000), async (req, res) => {
     const user = await authed(req, res);
     if (!user) return;
     const text = (req.body.lines || "").slice(0, 20000);
-    let items, hint = null;
-    const pid = /playlist/.test(text) ? playlistIdFrom(text) : null;
-    if (pid) {
-      try { items = await fetchPlaylistTracks(pid); }
-      catch (e) { return res.status(502).json({ error: "Couldn't read that playlist: " + e.message }); }
-    } else {
-      ({ items, hint } = parseInput(text));
+    // Merge EVERY playlist URL found (one per line) plus any plain song lines.
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const playlistLines = lines.filter((l) => /playlist/.test(l) && playlistIdFrom(l));
+    const songText = lines.filter((l) => !(/playlist/.test(l) && playlistIdFrom(l))).join("\n");
+
+    let items = [];
+    let hint = null;
+    const failed = [];
+    for (const line of playlistLines) {
+      try { items.push(...(await fetchPlaylistTracks(playlistIdFrom(line)))); }
+      catch { failed.push(line); }
     }
+    if (songText.trim()) {
+      const parsed = parseInput(songText);
+      items.push(...parsed.items);
+      hint = parsed.hint;
+    }
+    // Dedupe across merged playlists (by uri, else title+artist).
+    const seen = new Set();
+    items = items.filter((t) => {
+      const k = (t.uri || `${t.title}|${t.artist}`).toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
     if (!items.length) return res.status(400).json({ error: hint || "no tracks provided" });
     if (items.length > 150) items = items.slice(0, 150); // bound cost/time
 

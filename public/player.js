@@ -71,10 +71,17 @@ async function loadPlaylists() {
     sel.appendChild(o);
   });
 }
-// Selecting a playlist fills the link box so Build works unchanged.
+// Selecting a playlist ADDS it to the box — pick several to merge them.
 $("playlists").onchange = () => {
-  const id = $("playlists").value;
-  if (id) $("lines").value = `https://open.spotify.com/playlist/${id}`;
+  const sel = $("playlists");
+  const id = sel.value;
+  if (!id) return;
+  const url = `https://open.spotify.com/playlist/${id}`;
+  const cur = $("lines").value.trim();
+  if (!cur.includes(id)) $("lines").value = (cur ? cur + "\n" : "") + url;
+  const name = sel.options[sel.selectedIndex].textContent;
+  status(`Added “${name}”. Pick more to merge, then Build AI set.`);
+  sel.value = ""; // reset so the next pick adds another
 };
 
 $("build").onclick = async () => {
@@ -106,6 +113,14 @@ async function play(uris) {
   if (r.status === 204 || r.ok) {
     $("bar").style.display = "block";
     startPolling();
+    // Verify audio actually started — catches "device not really playing".
+    setTimeout(async () => {
+      try {
+        const n = await (await fetch("/api/now")).json();
+        if (!n.playing)
+          status("Playback didn't start — open the Spotify desktop app and pick it under “Play on device”.");
+      } catch {}
+    }, 1600);
     return true;
   }
   const e = await r.json().catch(() => ({}));
@@ -147,7 +162,8 @@ $("scrub").addEventListener("change", async () => {
 });
 
 // --- Auto-mix: app-driven volume fade out/in around each transition ---
-const BASE_VOL = 80, LOW_VOL = 12, FADE_MS = 7000;
+// LOW_VOL kept well above silence so a song never sounds "stopped".
+const BASE_VOL = 90, LOW_VOL = 35, FADE_MS = 6000;
 let lastSentVol = null;
 function autoMix(n) {
   if (!$("automix").checked) return;
