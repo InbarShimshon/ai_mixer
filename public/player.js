@@ -13,6 +13,28 @@ function toast(m) {
   toastTimer = setTimeout(() => t.classList.remove("show"), 2800);
 }
 const status = (m) => { $("status").textContent = m; toast(m); };
+
+// --- Undo (Cmd/Ctrl+Z) — snapshot the set before every edit ---
+let undoStack = [];
+function snapshot() {
+  if (currentSet) {
+    undoStack.push(JSON.parse(JSON.stringify(currentSet)));
+    if (undoStack.length > 60) undoStack.shift();
+  }
+}
+function undo() {
+  if (!undoStack.length) return toast("Nothing to undo.");
+  currentSet = undoStack.pop();
+  render(currentSet);
+  toast("↩︎ Undid last change.");
+}
+document.addEventListener("keydown", (e) => {
+  const z = e.key === "z" || e.key === "Z";
+  if ((e.metaKey || e.ctrlKey) && z && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  }
+});
 const fmt = (ms) => {
   const s = Math.floor((ms || 0) / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -145,6 +167,7 @@ $("play").onclick = async () => {
 // flow from the current song, then re-queue so it actually takes effect.
 $("improve").onclick = async () => {
   if (!currentSet?.order?.length) return status("Build a set first.");
+  snapshot();
   let fromIndex = 0, cur = null, pos = 0, playing = false;
   try {
     const n = await (await fetch("/api/now")).json();
@@ -356,6 +379,7 @@ function renderSearch(results) {
     const t = results[Number(row.dataset.i)];
     row.querySelector(".addbtn").onclick = async () => {
       row.querySelector(".addbtn").disabled = true;
+      snapshot();
       const r = await fetch("/api/addtrack", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -404,6 +428,7 @@ function renderSuggestions(list) {
     const t = list[Number(row.dataset.i)];
     row.querySelector(".addbtn").onclick = async () => {
       if (currentSet.order.some((x) => x.uri === t.uri)) return;
+      snapshot();
       // Smart add: re-order the whole set with the new track so it lands in its
       // best harmonic spot instead of a risky append at the end.
       const tracks = [...currentSet.order, t];
@@ -424,6 +449,7 @@ function renderSuggestions(list) {
 
 // Apply a new manual order: refresh junction flags for the fixed order, re-render.
 async function applyOrder(newOrder) {
+  snapshot(); // for Cmd/Ctrl+Z
   const r = await fetch("/api/transitions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -524,8 +550,10 @@ async function suggestSpots(i) {
     body: JSON.stringify({ tracks: currentSet.order, index: i }),
   });
   const { spots, others } = await r.json();
-  const chips = [`<span class="chip head">Smoothest spots for “${song}”:</span>`];
-  spots.forEach((s) => {
+  // Show only the few smoothest options (spots are sorted best-first).
+  const top = spots.slice(0, 5);
+  const chips = [`<span class="chip head">Best spots for “${song}”:</span>`];
+  top.forEach((s) => {
     const where = s.pos === 0 ? "at the very start" : `after “${others[s.pos - 1].name}”`;
     chips.push(`<span class="chip" data-pos="${s.pos}"><span class="badge ${s.flag}">${s.flag}</span> ${where}</span>`);
   });

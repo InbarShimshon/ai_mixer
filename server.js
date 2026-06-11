@@ -7,6 +7,7 @@ import { orderSet, buildTransitions, bestInsertions, orderFrom } from "./lib/har
 import { parseInput, resolveTrack, playlistIdFrom, fetchPlaylistTracks } from "./lib/resolve.js";
 import { suggestTracks } from "./lib/suggest.js";
 import { fillMissing } from "./lib/estimate.js";
+import { loadUsers, saveUsers } from "./lib/store.js";
 
 dotenv.config();
 const app = express();
@@ -47,11 +48,9 @@ const rateLimit = (max, windowMs) => (req, res, next) => {
   next();
 };
 
-// --- Per-user sessions (cookie sid -> { tokens, sets }), persisted to disk ---
-const USERS_FILE = ".users.json";
-let users = {};
-try { users = JSON.parse(fs.readFileSync(USERS_FILE, "utf8")); } catch {}
-const persist = () => { try { fs.writeFileSync(USERS_FILE, JSON.stringify(users)); } catch {} };
+// --- Per-user sessions (cookie sid -> { tokens, sets }), durable via lib/store ---
+const users = await loadUsers();
+const persist = () => saveUsers(users);
 
 app.use((req, res, next) => {
   const jar = Object.fromEntries(
