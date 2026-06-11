@@ -1,0 +1,22 @@
+# One-click deploy config for Render (https://render.com).
+# In the Render dashboard: New → Blueprint → connect this repo. It reads this file.
+# Then set the secret env vars (marked sync:false) in the dashboard, and set
+# REDIRECT_URI to https://<your-service>.onrender.com/callback once the URL is known.
+services:
+  - type: web
+    name: ai-mixer
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: GETSONGBPM_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: REDIRECT_URI
+        sync: false
