@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import crypto from "crypto";
 import { analyzeAll } from "./lib/analysis.js";
-import { orderSet, buildTransitions, bestInsertions, orderFrom } from "./lib/harmonic.js";
+import { orderSet, buildTransitions, bestInsertions, orderFrom, buildAround } from "./lib/harmonic.js";
 import { parseInput, resolveTrack, playlistIdFrom, fetchPlaylistTracks } from "./lib/resolve.js";
 import { suggestTracks } from "./lib/suggest.js";
 import { fillMissing } from "./lib/estimate.js";
@@ -469,7 +469,12 @@ app.post("/api/taste-set", rateLimit(8, 60000), async (req, res) => {
       analyzed = analyzed.concat(addAnalyzed);
     }
 
-    const { order, transitions } = orderSet(analyzed);
+    // With kept songs, build AROUND them (others bridge rough transitions);
+    // otherwise order the whole set on the energy arc.
+    const anchors = analyzed.filter((t) => t.keep);
+    const { order, transitions } = anchors.length
+      ? buildAround(anchors, analyzed.filter((t) => !t.keep))
+      : orderSet(analyzed);
     res.json({ count: order.length, addedCount, mineCount: order.length - addedCount, order, transitions });
   } catch (e) {
     res.status(500).json({ error: String(e) });

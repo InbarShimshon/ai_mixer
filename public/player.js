@@ -1042,5 +1042,8 @@ function highlightNowPlaying(name) {
   });
 }
 
+// Collapsible cards.
+document.querySelectorAll(".ctoggle").forEach((h) => (h.onclick = () => h.closest(".card").classList.toggle("collapsed")));
+
 refreshAuthAndDevices();
 loadSavedList();

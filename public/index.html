@@ -35,7 +35,7 @@
           radial-gradient(700px 500px at -10% 12%, rgba(167,139,250,.10), transparent 55%),
           linear-gradient(180deg, var(--bg1), var(--bg0));
       }
-      .wrap { max-width: 1100px; margin: 0 auto; padding: 0 24px 140px; }
+      .wrap { max-width: 1400px; margin: 0 auto; padding: 0 32px 140px; }
 
       /* Header */
       header {
@@ -69,6 +69,11 @@
       .card h2 { display: flex; align-items: center; gap: 10px; font-size: 12px; text-transform: uppercase;
         letter-spacing: 1.3px; color: var(--muted); margin: 0 0 18px; font-weight: 600; }
       .card h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); font-size: 12.5px; }
+      .ctoggle { cursor: pointer; user-select: none; }
+      .ctoggle::before { content: "▾"; display: inline-block; margin-right: 9px; color: var(--accent); transition: transform .15s; }
+      .card.collapsed h2 { margin-bottom: 0; }
+      .card.collapsed .ctoggle::before { transform: rotate(-90deg); }
+      .card.collapsed .cardbody { display: none; }
       .step { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px;
         background: linear-gradient(140deg, rgba(109,124,255,.25), rgba(167,139,250,.18));
         border: 1px solid rgba(109,124,255,.4); color: #c3c9ff; font-size: 11px; font-weight: 700; }
@@ -176,7 +181,7 @@
         background: linear-gradient(180deg, rgba(13,16,24,.7), rgba(10,12,19,.92));
         backdrop-filter: blur(22px); border-top: 1px solid var(--border-2);
         padding: 13px 20px; box-shadow: 0 -10px 40px -10px rgba(0,0,0,.7); }
-      #bar .inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
+      #bar .inner { max-width: 1400px; margin: 0 auto; display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
       #nowName { font-weight: 600; font-size: 13px; min-width: 150px; display: flex; align-items: center; gap: 8px; }
       #nowName::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--smooth); box-shadow: 0 0 8px var(--smooth); animation: pulse 1.6s ease-in-out infinite; }
       @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
@@ -226,14 +231,16 @@
         <button id="logout" class="btn-ghost" style="display:none">Disconnect</button>
       </header>
 
-      <div class="card">
-        <h2>🔍 Search &amp; add a song</h2>
-        <div class="row tight">
-          <input id="searchq" placeholder="Search any song or artist…" style="flex:1; min-width:200px" />
-          <button id="searchBtn" class="btn-ghost btn-sm">Search</button>
+      <div class="card collapsible collapsed">
+        <h2 class="ctoggle">🔍 Search &amp; add a song</h2>
+        <div class="cardbody">
+          <div class="row tight">
+            <input id="searchq" placeholder="Search any song or artist…" style="flex:1; min-width:200px" />
+            <button id="searchBtn" class="btn-ghost btn-sm">Search</button>
+          </div>
+          <div id="searchStatus"></div>
+          <table id="searchResults"></table>
         </div>
-        <div id="searchStatus"></div>
-        <table id="searchResults"></table>
       </div>
 
       <div class="card">
@@ -272,9 +279,11 @@
         <div id="status"></div>
       </div>
 
-      <div class="card" id="mixCard" style="display:none">
-        <h2>🎛 Live mix <span class="hint">— the current song crossing into the next, like a DAW</span></h2>
-        <canvas id="mixtimeline" width="1100" height="140"></canvas>
+      <div class="card collapsible" id="mixCard" style="display:none">
+        <h2 class="ctoggle">🎛 Live mix <span class="hint">— the current song crossing into the next, like a DAW</span></h2>
+        <div class="cardbody">
+          <canvas id="mixtimeline" width="1100" height="140"></canvas>
+        </div>
       </div>
 
       <div class="card">
