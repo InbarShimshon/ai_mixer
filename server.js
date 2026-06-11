@@ -151,6 +151,7 @@ app.get("/callback", async (req, res) => {
     refresh_token: data.refresh_token,
     expires_at: Date.now() + (data.expires_in || 3600) * 1000,
   };
+  await spotifyId(req.user); // link this browser to the Spotify account (syncs saved sets)
   persist();
   res.redirect("/");
 });
@@ -191,6 +192,35 @@ async function authed(req, res) {
     return null;
   }
   return req.user;
+}
+
+// --- Account-scoped sets ----------------------------------------------------
+// Saved sets are tied to the Spotify ACCOUNT, not the browser cookie, so they
+// follow the user across any browser/device once they connect the same Spotify.
+const accountSets = () => (users.__accounts ||= {});
+async function spotifyId(user) {
+  if (user.spotifyId) return user.spotifyId;
+  if (!user.tokens.access_token) return null;
+  try {
+    const me = await (await spotify(user, "/me")).json();
+    if (me.id) {
+      user.spotifyId = me.id;
+      // First link on this browser: carry any session-local sets into the account.
+      const bucket = (accountSets()[me.id] ||= {});
+      if (user.sets && Object.keys(user.sets).length) {
+        for (const [k, v] of Object.entries(user.sets)) bucket[k] ||= v;
+        user.sets = {};
+      }
+      persist();
+    }
+  } catch { /* /me failed — fall back to session sets */ }
+  return user.spotifyId || null;
+}
+// The live sets object for this request: account-scoped when linked, else the
+// browser session bucket (pre-login fallback).
+async function setsFor(req) {
+  const id = await spotifyId(req.user);
+  return id ? (accountSets()[id] ||= {}) : req.user.sets;
 }
 
 app.get("/api/auth", async (req, res) => {
@@ -375,24 +405,28 @@ app.post("/api/bestspots", (req, res) => {
   res.json({ spots: bestInsertions(others, track), others }); // all positions (client slices for chips)
 });
 
-// --- Saved sets (per user) ---
-app.get("/api/sets", (req, res) => {
-  res.json(Object.values(req.user.sets).map((s) => ({ name: s.name, count: s.order.length, savedAt: s.savedAt })));
+// --- Saved sets (tied to the Spotify account, so they sync across browsers) ---
+app.get("/api/sets", async (req, res) => {
+  const sets = await setsFor(req);
+  res.json(Object.values(sets).map((s) => ({ name: s.name, count: s.order.length, savedAt: s.savedAt })));
 });
-app.post("/api/sets", (req, res) => {
+app.post("/api/sets", async (req, res) => {
   const { name, order } = req.body;
   if (!name || !Array.isArray(order)) return res.status(400).json({ error: "name + order required" });
-  req.user.sets[name] = { name, order, savedAt: new Date().toISOString() };
+  const sets = await setsFor(req);
+  sets[name] = { name, order, savedAt: new Date().toISOString() };
   persist();
   res.json({ ok: true });
 });
-app.get("/api/sets/:name", (req, res) => {
-  const s = req.user.sets[req.params.name];
+app.get("/api/sets/:name", async (req, res) => {
+  const sets = await setsFor(req);
+  const s = sets[req.params.name];
   if (!s) return res.status(404).json({ error: "not found" });
   res.json({ count: s.order.length, order: s.order, transitions: buildTransitions(s.order) });
 });
-app.delete("/api/sets/:name", (req, res) => {
-  delete req.user.sets[req.params.name];
+app.delete("/api/sets/:name", async (req, res) => {
+  const sets = await setsFor(req);
+  delete sets[req.params.name];
   persist();
   res.json({ ok: true });
 });
