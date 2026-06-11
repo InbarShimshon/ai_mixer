@@ -4,7 +4,15 @@ let polling = false;
 let scrubbing = false;
 
 const $ = (id) => document.getElementById(id);
-const status = (m) => ($("status").textContent = m);
+let toastTimer;
+function toast(m) {
+  const t = $("toast");
+  t.textContent = m;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2800);
+}
+const status = (m) => { $("status").textContent = m; toast(m); };
 const fmt = (ms) => {
   const s = Math.floor((ms || 0) / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -20,12 +28,14 @@ $("logout").onclick = async () => {
 async function refreshAuthAndDevices() {
   const a = await (await fetch("/api/auth")).json();
   if (!a.loggedIn) {
-    $("who").textContent = "○ not connected";
+    $("who").textContent = "not connected";
+    $("dot").classList.remove("on");
     $("login").style.display = "";
     $("logout").style.display = "none";
     return;
   }
-  $("who").textContent = "● connected";
+  $("who").textContent = "connected";
+  $("dot").classList.add("on");
   $("login").style.display = "none";
   $("logout").style.display = "";
   const d = await (await fetch("/api/devices")).json();
@@ -367,6 +377,7 @@ let dragFlags = null;
 
 function render({ order, transitions }) {
   $("spots").innerHTML = "";
+  $("emptyState").style.display = order.length ? "none" : "";
   const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th></th><th></th></tr>`];
   order.forEach((t, i) => {
     const tr = transitions[i];
