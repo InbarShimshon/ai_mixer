@@ -32,7 +32,28 @@ async function refreshAuthAndDevices() {
     o.textContent = "No device — open the Spotify app first";
     sel.appendChild(o);
   }
+  loadPlaylists();
 }
+
+// Populate the "your playlists" dropdown after connecting.
+async function loadPlaylists() {
+  const r = await fetch("/api/playlists");
+  if (!r.ok) return;
+  const list = await r.json();
+  const sel = $("playlists");
+  sel.innerHTML = `<option value="">— choose a playlist —</option>`;
+  list.forEach((p) => {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = `${p.name} (${p.count})`;
+    sel.appendChild(o);
+  });
+}
+// Selecting a playlist fills the link box so Build works unchanged.
+$("playlists").onchange = () => {
+  const id = $("playlists").value;
+  if (id) $("lines").value = `https://open.spotify.com/playlist/${id}`;
+};
 
 $("build").onclick = async () => {
   const lines = $("lines").value;
@@ -288,6 +309,7 @@ async function applyOrder(newOrder) {
 }
 
 let dragFrom = null;
+let dragFlags = null;
 
 function render({ order, transitions }) {
   $("spots").innerHTML = "";
@@ -321,19 +343,50 @@ function render({ order, transitions }) {
       status(`Removed “${removed}”.`);
     };
     row.querySelector(".target").onclick = () => suggestSpots(i);
-    row.addEventListener("dragstart", () => (dragFrom = i));
-    row.addEventListener("dragover", (e) => e.preventDefault());
+
+    // --- Drag with live "is this a smooth spot?" feedback ---
+    row.addEventListener("dragstart", async () => {
+      dragFrom = i;
+      dragFlags = null;
+      row.classList.add("dragging");
+      // Precompute the drop quality for every position (one call per drag).
+      const r = await fetch("/api/bestspots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tracks: currentSet.order, index: i }),
+      });
+      const { spots } = await r.json();
+      dragFlags = {};
+      spots.forEach((s) => (dragFlags[s.pos] = s.flag));
+    });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (dragFrom === null || !dragFlags) return;
+      const othersPos = i > dragFrom ? i - 1 : i; // insertion index in the list-minus-dragged
+      const flag = dragFlags[othersPos] || "unknown";
+      clearDropMarks();
+      row.classList.add("drop-" + flag);
+      status(`Drop here → ${flag === "smooth" ? "✅ smooth" : flag === "ok" ? "🟡 ok" : flag === "risky" ? "🔴 risky" : "⚪ unknown"} transition`);
+    });
+    row.addEventListener("dragend", () => { row.classList.remove("dragging"); clearDropMarks(); });
     row.addEventListener("drop", async (e) => {
       e.preventDefault();
+      clearDropMarks();
       if (dragFrom === null || dragFrom === i) return;
       const arr = currentSet.order.slice();
       const [moved] = arr.splice(dragFrom, 1);
       arr.splice(i, 0, moved);
-      dragFrom = null;
+      const from = dragFrom; dragFrom = null; dragFlags = null;
       await applyOrder(arr);
       status(`Moved “${moved.name}” to position ${i + 1}.`);
     });
   });
+}
+
+function clearDropMarks() {
+  document.querySelectorAll("#out tr").forEach((r) =>
+    r.classList.remove("drop-smooth", "drop-ok", "drop-risky", "drop-unknown")
+  );
 }
 
 // Ask the server for the smoothest spots to move track `i` to, show as chips.

@@ -75,6 +75,10 @@
       tbody tr { transition: background .12s; }
       tbody tr:hover { background: rgba(255,255,255,.025); }
       tr.now { background: var(--accent-soft) !important; box-shadow: inset 3px 0 0 var(--accent); }
+      tr.dragging { opacity: .4; }
+      tr.drop-smooth { box-shadow: inset 0 3px 0 var(--smooth); }
+      tr.drop-ok { box-shadow: inset 0 3px 0 var(--ok); }
+      tr.drop-risky { box-shadow: inset 0 3px 0 var(--risky); }
       .muted { color: var(--muted); }
       .badge { font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; display: inline-block; letter-spacing: .3px; }
       .smooth { color: var(--smooth); background: rgba(74,222,128,.12); }
@@ -129,6 +133,10 @@
           For the smoothest blend, play through the <b>desktop app</b> with <b>Crossfade ~10–12s</b> on.
         </div>
         <div style="height:12px"></div>
+        <label class="fld">Pick one of your playlists</label>
+        <select id="playlists"><option value="">— connect Spotify to load your playlists —</option></select>
+        <div style="height:12px"></div>
+        <label class="fld">…or paste a link / track list</label>
         <textarea id="lines" placeholder="https://open.spotify.com/playlist/...&#10;&#10;— or —&#10;Blinding Lights - The Weeknd&#10;One More Time - Daft Punk"></textarea>
         <div style="height:12px"></div>
         <div class="row">

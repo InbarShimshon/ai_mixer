@@ -161,6 +161,22 @@ app.get("/api/devices", async (req, res) => {
   res.json(await r.json());
 });
 
+// List the user's playlists (listing is allowed; track contents come from the embed).
+app.get("/api/playlists", async (req, res) => {
+  const user = await authed(req, res);
+  if (!user) return;
+  const items = [];
+  let url = "/me/playlists?limit=50";
+  while (url) {
+    const r = await spotify(user, url);
+    const p = await r.json();
+    if (p.error) break;
+    for (const pl of p.items || []) if (pl) items.push({ id: pl.id, name: pl.name, count: pl.tracks?.total ?? 0 });
+    url = p.next ? p.next.replace("https://api.spotify.com/v1", "") : null;
+  }
+  res.json(items);
+});
+
 // Build the AI-ordered set from a pasted playlist URL or track list.
 app.post("/api/order", rateLimit(20, 60000), async (req, res) => {
   try {
@@ -242,7 +258,7 @@ app.post("/api/bestspots", (req, res) => {
   const track = tracks[index];
   if (!track) return res.status(400).json({ error: "bad index" });
   const others = tracks.filter((_, k) => k !== index);
-  res.json({ spots: bestInsertions(others, track).slice(0, 4), others });
+  res.json({ spots: bestInsertions(others, track), others }); // all positions (client slices for chips)
 });
 
 // --- Saved sets (per user) ---
