@@ -175,9 +175,9 @@ const requeue = (uris, offsetUri, position_ms) =>
 // truly overlap two streams, so this is a fade transition, not a beat-mix.)
 async function smoothPlay(uris) {
   if (!$("automix")?.checked) return play(uris); // instant when Auto-mix is off
-  await setVol(40); await wait(180); await setVol(15);
+  await setVol(55); await wait(160); await setVol(40);
   const ok = await play(uris);
-  await wait(150); setVol(45); setTimeout(() => setVol(BASE_VOL), 550);
+  await wait(150); setVol(65); setTimeout(() => setVol(BASE_VOL), 500);
   return ok;
 }
 
@@ -272,8 +272,9 @@ $("scrub").addEventListener("change", async () => {
 });
 
 // --- Auto-mix: app-driven volume fade out/in around each transition ---
-// LOW_VOL kept well above silence so a song never sounds "stopped".
-const BASE_VOL = 90, LOW_VOL = 35, FADE_MS = 6000;
+// Gentle dip — LOW_VOL stays high so transitions don't go quiet, and a shorter
+// fade window so the dip is brief.
+const BASE_VOL = 92, LOW_VOL = 62, FADE_MS = 4000;
 let lastSentVol = null;
 function autoMix(n) {
   if (!$("automix").checked) return;
