@@ -541,6 +541,10 @@ function render({ order, transitions }) {
   $("spots").innerHTML = "";
   $("emptyState").style.display = order.length ? "none" : "";
   $("mixCard").style.display = order.length ? "block" : "none"; // live mix view always visible with a set
+  // Guest-requests indicator (✕ on the row un-adds any that don't fit).
+  const guests = order.filter((t) => t.guest).length;
+  $("guestBadge").style.display = guests ? "inline-block" : "none";
+  $("guestBadge").textContent = `👤 ${guests} guest pick${guests === 1 ? "" : "s"}`;
   const rows = [`<tr><th></th><th>#</th><th>Track</th><th>Artist</th><th>BPM</th><th>Key</th><th>→ next</th><th></th><th></th></tr>`];
   order.forEach((t, i) => {
     const tr = transitions[i];
@@ -549,7 +553,7 @@ function render({ order, transitions }) {
       `<tr draggable="true" data-idx="${i}" data-name="${(t.name || "").replace(/"/g, "")}">
         <td class="handle" title="Drag to reorder">⠿</td>
         <td class="muted">${i + 1}</td>
-        <td class="jump" title="Click to play from here">${t.name}</td>
+        <td class="jump" title="Click to play from here">${t.name}${t.guest ? '<span class="guesttag">guest</span>' : ""}</td>
         <td class="muted">${t.artist}</td>
         <td>${t.bpm ?? "?"}</td><td>${t.camelot ?? "?"}</td><td>${flag}</td>
         <td class="target" title="Suggest smooth spots for this song">🎯</td>
