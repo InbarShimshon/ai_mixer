@@ -205,22 +205,25 @@ async function spotifyId(user) {
     const me = await (await spotify(user, "/me")).json();
     if (me.id) {
       user.spotifyId = me.id;
-      // First link on this browser: carry any session-local sets into the account.
+      // Link this browser to the account: COPY session-local sets into the
+      // account bucket. Keep the originals as a legacy fallback (non-destructive
+      // so a deploy/migration race can never make a listed set unloadable).
       const bucket = (accountSets()[me.id] ||= {});
-      if (user.sets && Object.keys(user.sets).length) {
-        for (const [k, v] of Object.entries(user.sets)) bucket[k] ||= v;
-        user.sets = {};
-      }
+      for (const [k, v] of Object.entries(user.sets || {})) bucket[k] ||= v;
       persist();
     }
   } catch { /* /me failed — fall back to session sets */ }
   return user.spotifyId || null;
 }
-// The live sets object for this request: account-scoped when linked, else the
-// browser session bucket (pre-login fallback).
-async function setsFor(req) {
+// The account bucket (when linked) plus the browser-session bucket as a legacy
+// fallback. Reads merge both; writes go to the primary (account if linked).
+async function setBuckets(req) {
   const id = await spotifyId(req.user);
-  return id ? (accountSets()[id] ||= {}) : req.user.sets;
+  const primary = id ? (accountSets()[id] ||= {}) : (req.user.sets ||= {});
+  return { primary, legacy: req.user.sets || {} };
+}
+function mergedSets({ primary, legacy }) {
+  return { ...legacy, ...primary }; // account/primary wins on name collision
 }
 
 app.get("/api/auth", async (req, res) => {
@@ -420,26 +423,27 @@ app.post("/api/bestspots", (req, res) => {
 
 // --- Saved sets (tied to the Spotify account, so they sync across browsers) ---
 app.get("/api/sets", async (req, res) => {
-  const sets = await setsFor(req);
+  const sets = mergedSets(await setBuckets(req));
   res.json(Object.values(sets).map((s) => ({ name: s.name, count: s.order.length, savedAt: s.savedAt })));
 });
 app.post("/api/sets", async (req, res) => {
   const { name, order } = req.body;
   if (!name || !Array.isArray(order)) return res.status(400).json({ error: "name + order required" });
-  const sets = await setsFor(req);
-  sets[name] = { name, order, savedAt: new Date().toISOString() };
+  const { primary } = await setBuckets(req);
+  primary[name] = { name, order, savedAt: new Date().toISOString() };
   persist();
   res.json({ ok: true });
 });
 app.get("/api/sets/:name", async (req, res) => {
-  const sets = await setsFor(req);
-  const s = sets[req.params.name];
+  const { primary, legacy } = await setBuckets(req);
+  const s = primary[req.params.name] || legacy[req.params.name]; // account first, then legacy
   if (!s) return res.status(404).json({ error: "not found" });
   res.json({ count: s.order.length, order: s.order, transitions: buildTransitions(s.order) });
 });
 app.delete("/api/sets/:name", async (req, res) => {
-  const sets = await setsFor(req);
-  delete sets[req.params.name];
+  const { primary, legacy } = await setBuckets(req);
+  delete primary[req.params.name];
+  delete legacy[req.params.name]; // remove from both so it doesn't reappear
   persist();
   res.json({ ok: true });
 });
