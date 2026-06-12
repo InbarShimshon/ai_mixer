@@ -112,7 +112,14 @@ app.use((req, res, next) => {
   res.set("Content-Type", "text/html").send(GATE_HTML);
 });
 
-app.use(express.static("public"));
+app.use(
+  express.static("public", {
+    setHeaders: (res, p) => {
+      // Always revalidate HTML/JS so a fixed client bug can't linger in caches.
+      if (p.endsWith(".html") || p.endsWith(".js")) res.setHeader("Cache-Control", "no-cache");
+    },
+  })
+);
 
 const basicAuth = Buffer.from(
   `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
@@ -451,10 +458,19 @@ app.post("/api/sets", async (req, res) => {
   res.json({ ok: true });
 });
 app.get("/api/sets/:name", async (req, res) => {
-  const { primary, legacy } = await setBuckets(req);
-  const s = primary[req.params.name] || legacy[req.params.name]; // account first, then legacy
+  const buckets = await setBuckets(req);
+  const all = mergedSets(buckets);
+  const want = req.params.name;
+  let s = all[want];
+  // Safety net for stale clients: a name with '#' may arrive truncated at the '#'
+  // (it was treated as a URL fragment). Fall back to a unique prefix match.
+  if (!s) {
+    const stem = want.trimEnd();
+    const hits = Object.values(all).filter((x) => x.name === stem || x.name.startsWith(stem));
+    if (stem && hits.length === 1) s = hits[0];
+  }
   if (!s) return res.status(404).json({ error: "not found" });
-  res.json({ count: s.order.length, order: s.order, transitions: buildTransitions(s.order) });
+  res.json({ name: s.name, count: s.order.length, order: s.order, transitions: buildTransitions(s.order) });
 });
 app.delete("/api/sets/:name", async (req, res) => {
   const { primary, legacy } = await setBuckets(req);
