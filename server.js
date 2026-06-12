@@ -199,7 +199,8 @@ async function authed(req, res) {
 // follow the user across any browser/device once they connect the same Spotify.
 const accountSets = () => (users.__accounts ||= {});
 async function spotifyId(user) {
-  if (user.spotifyId) return user.spotifyId;
+  if (user.spotifyId) return user.spotifyId; // cached & persisted — no /me needed
+  await ensureToken(user); // refresh first, else an expired token 401s /me and loses the account
   if (!user.tokens.access_token) return null;
   try {
     const me = await (await spotify(user, "/me")).json();
@@ -425,6 +426,21 @@ app.post("/api/bestspots", (req, res) => {
 app.get("/api/sets", async (req, res) => {
   const sets = mergedSets(await setBuckets(req));
   res.json(Object.values(sets).map((s) => ({ name: s.name, count: s.order.length, savedAt: s.savedAt })));
+});
+// Diagnostic: where do THIS user's sets live? (own buckets only)
+app.get("/api/sets-debug", async (req, res) => {
+  const id = await spotifyId(req.user);
+  const account = (id && accountSets()[id]) || {};
+  const legacy = req.user.sets || {};
+  res.json({
+    loggedIn: !!req.user.tokens.access_token,
+    spotifyId: id,
+    accountCount: Object.keys(account).length,
+    accountNames: Object.keys(account),
+    legacyCount: Object.keys(legacy).length,
+    legacyNames: Object.keys(legacy),
+    allAccountIds: Object.keys(accountSets()), // which accounts exist on this server
+  });
 });
 app.post("/api/sets", async (req, res) => {
   const { name, order } = req.body;
