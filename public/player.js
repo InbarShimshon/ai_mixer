@@ -201,7 +201,8 @@ async function play(uris) {
     return true;
   }
   const e = await r.json().catch(() => ({}));
-  status("Play failed: " + JSON.stringify(e.error || e));
+  if (e.message) { status("🔈 " + e.message); toast(e.message); }
+  else status("Play failed: " + JSON.stringify(e.error || e));
   return false;
 }
 

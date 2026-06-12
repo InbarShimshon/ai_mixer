@@ -329,10 +329,23 @@ app.put("/api/play", async (req, res) => {
   const body = { uris };
   if (offsetUri) body.offset = { uri: offsetUri }; // start at this track…
   if (typeof position_ms === "number") body.position_ms = Math.max(0, Math.round(position_ms)); // …at this point
-  const r = await spotify(user, `/me/player/play${device_id ? `?device_id=${encodeURIComponent(device_id)}` : ""}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
+  const startPlay = (dev) =>
+    spotify(user, `/me/player/play${dev ? `?device_id=${encodeURIComponent(dev)}` : ""}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  let r = await startPlay(device_id);
+  // No active device (404) → wake one up: grab the user's devices and retry on it.
+  if (r.status === 404 && !device_id) {
+    const dl = await (await spotify(user, "/me/player/devices")).json().catch(() => ({}));
+    const dev = (dl.devices || []).find((d) => d.is_active) || (dl.devices || [])[0];
+    if (dev) r = await startPlay(dev.id);
+    else
+      return res.status(404).json({
+        error: "no_device",
+        message: "Open Spotify on your phone or computer (play/pause anything once), then press play here.",
+      });
+  }
   res.status(r.status).json(r.status === 204 ? { ok: true } : await r.json().catch(() => ({})));
 });
 
