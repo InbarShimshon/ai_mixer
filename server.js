@@ -10,6 +10,12 @@ import { fillMissing } from "./lib/estimate.js";
 import { loadUsers, saveUsers } from "./lib/store.js";
 
 dotenv.config();
+
+// Never let a stray async error take the whole service down (Render exits on a
+// status-1 crash, causing a ~50s cold restart for everyone). Log and keep running.
+process.on("unhandledRejection", (e) => console.error("unhandledRejection:", e?.message || e));
+process.on("uncaughtException", (e) => console.error("uncaughtException:", e?.message || e));
+
 const app = express();
 app.set("trust proxy", 1); // behind Render's TLS proxy
 app.disable("x-powered-by");
@@ -167,12 +173,17 @@ async function ensureToken(user) {
   const t = user.tokens;
   if (t.access_token && Date.now() < t.expires_at - 30000) return;
   if (!t.refresh_token) return;
-  const r = await fetch("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: { Authorization: `Basic ${basicAuth}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: t.refresh_token }),
-  });
-  const data = await r.json();
+  let data;
+  try {
+    const r = await fetch("https://accounts.spotify.com/api/token", {
+      method: "POST",
+      headers: { Authorization: `Basic ${basicAuth}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: t.refresh_token }),
+    });
+    data = await r.json();
+  } catch {
+    return; // transient network error refreshing — keep existing token, don't crash
+  }
   if (data.access_token) {
     t.access_token = data.access_token;
     t.expires_at = Date.now() + (data.expires_in || 3600) * 1000;
@@ -207,9 +218,9 @@ async function authed(req, res) {
 const accountSets = () => (users.__accounts ||= {});
 async function spotifyId(user) {
   if (user.spotifyId) return user.spotifyId; // cached & persisted — no /me needed
-  await ensureToken(user); // refresh first, else an expired token 401s /me and loses the account
-  if (!user.tokens.access_token) return null;
   try {
+    await ensureToken(user); // refresh first, else an expired token 401s /me and loses the account
+    if (!user.tokens.access_token) return null;
     const me = await (await spotify(user, "/me")).json();
     if (me.id) {
       user.spotifyId = me.id;
