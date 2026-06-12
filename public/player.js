@@ -400,8 +400,10 @@ $("exportSpotify").onclick = async () => {
 };
 
 // --- Saved sets ---
+let savedNames = new Set(); // names that already exist, so we know update vs create
 async function loadSavedList() {
   const list = await (await fetch("/api/sets")).json();
+  savedNames = new Set(list.map((s) => s.name));
   const sel = $("savedSets");
   sel.innerHTML = list.length ? "" : "<option>— no saved sets —</option>";
   list.forEach((s) => {
@@ -410,11 +412,28 @@ async function loadSavedList() {
     o.textContent = `${s.name} (${s.count})`;
     sel.appendChild(o);
   });
+  refreshSaveBtn();
 }
+// Make "Save current" say whether it'll Update an existing set or Save a new one.
+function refreshSaveBtn() {
+  const btn = $("saveSet");
+  if (!btn) return;
+  const name = ($("setName").value || "").trim();
+  if (name && savedNames.has(name)) {
+    btn.textContent = `💾 Update “${name}”`;
+    btn.title = "Overwrites the existing saved set with the current order";
+  } else {
+    btn.textContent = "💾 Save as new";
+    btn.title = "Saves the current set under the name in the box";
+  }
+}
+$("setName").addEventListener("input", refreshSaveBtn);
 $("saveSet").onclick = async () => {
   if (!currentSet) return status("Build or load a set first.");
   const name = ($("setName").value || "").trim();
   if (!name) return status("Give the set a name to save it.");
+  const isUpdate = savedNames.has(name);
+  const count = currentSet.order?.length || 0;
   await fetch("/api/sets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -422,7 +441,9 @@ $("saveSet").onclick = async () => {
   });
   await loadSavedList();
   $("savedSets").value = name;
-  status(`Saved “${name}”.`);
+  const msg = isUpdate ? `Updated “${name}” (${count} songs).` : `Saved new set “${name}” (${count} songs).`;
+  status(msg);
+  toast(msg);
 };
 $("loadSet").onclick = async () => {
   const name = $("savedSets").value;
@@ -432,15 +453,21 @@ $("loadSet").onclick = async () => {
   currentSet = await r.json();
   render(currentSet);
   $("setName").value = name;
+  refreshSaveBtn(); // button now reads “Update “name”” since it exists
   status(`Loaded “${name}” — edit it, then Play or re-Save.`);
 };
+// Remove a single saved set — the one currently selected in the dropdown.
 $("delSet").onclick = async () => {
   const name = $("savedSets").value;
-  if (!name) return status("Pick a saved set in the dropdown first.");
+  if (!name || name.startsWith("—")) return status("Pick a saved set in the dropdown first.");
   if (!confirm(`Delete the saved playlist “${name}”? This can't be undone.`)) return;
-  await fetch("/api/sets/" + encodeURIComponent(name), { method: "DELETE" });
+  const r = await fetch("/api/sets/" + encodeURIComponent(name), { method: "DELETE" });
+  if (!r.ok) return status("Couldn't delete that set — try again.");
   await loadSavedList();
-  status(`Deleted saved playlist “${name}”.`);
+  $("setName").value = "";
+  refreshSaveBtn();
+  status(`Deleted “${name}”.`);
+  toast(`🗑 Deleted “${name}”`);
 };
 
 // Clear the current working set (start over) — does not touch saved playlists.
