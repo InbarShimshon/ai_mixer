@@ -49,7 +49,8 @@
         font-size: 20px; color: #fff;
         background: linear-gradient(140deg, #8b96ff, #5b54e6 60%, #7c4fe0);
         box-shadow: 0 6px 22px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.25); }
-      .brand h1 { font-family: "Space Grotesk", sans-serif; font-size: 19px; margin: 0; font-weight: 600; letter-spacing: -.2px; }
+      .brand h1 { font-family: "Space Grotesk", sans-serif; font-size: 19px; margin: 0; font-weight: 600; letter-spacing: -.2px;
+        background: linear-gradient(92deg, #fff 20%, #b9c0ff 60%, #d7b8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
       .brand p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
       header .spacer { flex: 1; }
       .status-pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted);
@@ -58,25 +59,37 @@
       .dot.on { background: var(--smooth); box-shadow: 0 0 10px rgba(69,212,131,.7); }
 
       /* Cards */
-      .card { background: var(--panel); backdrop-filter: blur(18px);
+      .card { position: relative; --ca: var(--accent);
+        background: var(--panel); backdrop-filter: blur(18px);
         border: 1px solid var(--border); border-radius: var(--radius);
-        padding: 22px 24px; margin-bottom: 18px;
-        box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -22px rgba(0,0,0,.8);
+        padding: 22px 24px 24px 26px; margin-bottom: 18px;
+        box-shadow: inset 3px 0 0 var(--ca), 0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -22px rgba(0,0,0,.8);
+        transition: box-shadow .2s, border-color .2s, transform .2s;
         animation: rise .5s cubic-bezier(.2,.7,.2,1) both; }
+      .card:hover { border-color: var(--border-2); box-shadow: inset 3px 0 0 var(--ca), 0 1px 0 rgba(255,255,255,.06) inset, 0 22px 48px -22px rgba(0,0,0,.85); }
+      .card::after { content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:0;
+        background: radial-gradient(460px 170px at 0% -10%, color-mix(in srgb, var(--ca) 15%, transparent), transparent 70%); }
+      .card > * { position: relative; z-index: 1; }
+      /* per-section colour identity */
+      .c-cyan{--ca:#3fd0dd} .c-blue{--ca:#6d8bff} .c-green{--ca:#45d483}
+      .c-violet{--ca:#a78bfa} .c-pink{--ca:#f472b6} .c-amber{--ca:#edb84a}
       .card:nth-child(2){animation-delay:.04s} .card:nth-child(3){animation-delay:.08s}
       .card:nth-child(4){animation-delay:.12s} .card:nth-child(5){animation-delay:.16s}
       @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-      .card h2 { display: flex; align-items: center; gap: 10px; font-size: 12px; text-transform: uppercase;
-        letter-spacing: 1.3px; color: var(--muted); margin: 0 0 18px; font-weight: 600; }
-      .card h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); font-size: 12.5px; }
+      .card h2 { display: flex; align-items: center; gap: 11px; font-size: 15px; text-transform: none;
+        letter-spacing: -.2px; color: #fff; margin: 0 0 18px; font-weight: 600;
+        font-family: "Space Grotesk", sans-serif; }
+      .card h2 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); font-size: 12.5px;
+        font-family: "Inter", sans-serif; }
       .ctoggle { cursor: pointer; user-select: none; }
-      .ctoggle::before { content: "▾"; display: inline-block; margin-right: 9px; color: var(--accent); transition: transform .15s; }
+      .ctoggle::before { content: "▾"; display: inline-block; margin-right: 9px; color: var(--ca); transition: transform .15s; }
       .card.collapsed h2 { margin-bottom: 0; }
       .card.collapsed .ctoggle::before { transform: rotate(-90deg); }
       .card.collapsed .cardbody { display: none; }
-      .step { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px;
-        background: linear-gradient(140deg, rgba(109,124,255,.25), rgba(167,139,250,.18));
-        border: 1px solid rgba(109,124,255,.4); color: #c3c9ff; font-size: 11px; font-weight: 700; }
+      .step { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px;
+        background: color-mix(in srgb, var(--ca) 26%, transparent);
+        border: 1px solid color-mix(in srgb, var(--ca) 55%, transparent); color: #fff; font-size: 11.5px; font-weight: 700;
+        box-shadow: 0 3px 12px -3px color-mix(in srgb, var(--ca) 65%, transparent); }
 
       /* Forms */
       textarea, input, select {
@@ -107,6 +120,9 @@
       .btn-primary:hover { filter: brightness(1.07); box-shadow: 0 8px 24px -4px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,.3); }
       .btn-ghost { background: rgba(255,255,255,.045); color: var(--text); border-color: var(--border-2); }
       .btn-ghost:hover { background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.22); }
+      /* ghost buttons glow in their section's colour on hover */
+      .card .btn-ghost:hover { background: color-mix(in srgb, var(--ca) 13%, rgba(255,255,255,.045));
+        border-color: color-mix(in srgb, var(--ca) 50%, var(--border-2)); color: #fff; }
       .btn-sm { padding: 8px 13px; font-size: 12.5px; }
 
       .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted);
@@ -167,9 +183,12 @@
       #mixtimeline { width: 100%; height: 140px; border-radius: 10px; background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.2)); display: block; }
 
       /* Empty state */
-      .empty { text-align: center; padding: 36px 20px; border: 1.5px dashed var(--border-2); border-radius: 14px; color: var(--muted); }
-      .empty .ic { font-size: 30px; opacity: .8; }
-      .empty p { margin: 12px 0 0; font-size: 13.5px; }
+      .empty { text-align: center; padding: 40px 20px; border-radius: 14px; color: var(--muted);
+        border: 1.5px dashed color-mix(in srgb, var(--ca) 35%, var(--border-2));
+        background: radial-gradient(300px 120px at 50% 0%, color-mix(in srgb, var(--ca) 9%, transparent), transparent 70%); }
+      .empty .ic { font-size: 34px; opacity: .9; display: inline-block; animation: float 3.5s ease-in-out infinite; }
+      @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+      .empty p { margin: 14px 0 0; font-size: 13.5px; }
 
       #status, #suggestStatus, #searchStatus { font-size: 13px; color: var(--muted); margin: 12px 2px 0; min-height: 18px; }
       #notice { font-size: 13px; color: var(--muted); line-height: 1.65; }
@@ -231,7 +250,7 @@
         <button id="logout" class="btn-ghost" style="display:none">Disconnect</button>
       </header>
 
-      <div class="card collapsible collapsed">
+      <div class="card collapsible collapsed c-cyan">
         <h2 class="ctoggle">🔍 Search &amp; add a song</h2>
         <div class="cardbody">
           <div class="row tight">
@@ -243,7 +262,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card c-blue">
         <h2><span class="step">01</span> Source</h2>
         <div id="notice">
           Pick a playlist, paste a <b>Spotify link</b>, or search songs below. For the smoothest blend,
@@ -279,14 +298,14 @@
         <div id="status"></div>
       </div>
 
-      <div class="card collapsible" id="mixCard" style="display:none">
+      <div class="card collapsible c-green" id="mixCard" style="display:none">
         <h2 class="ctoggle">🎛 Live mix <span class="hint">— the current song crossing into the next, like a DAW</span></h2>
         <div class="cardbody">
           <canvas id="mixtimeline" width="1100" height="140"></canvas>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card c-violet">
         <h2><span class="step">02</span> Saved sets</h2>
         <div class="row tight">
           <input id="setName" placeholder="Set name (e.g. Saar &amp; Bar – first dance)" style="flex:2; min-width:200px" />
@@ -308,7 +327,7 @@
         </div>
       </div>
 
-      <div class="card" id="setCard">
+      <div class="card c-pink" id="setCard">
         <h2><span class="step">03</span> The set <span id="guestBadge" class="gbadge" style="display:none"></span> <span class="hint">— drag ⠿ to reorder · 🎯 best spots · click a title to play · ✕ to remove</span></h2>
         <div id="spots"></div>
         <div id="mixview"></div>
@@ -316,8 +335,8 @@
         <table id="out"></table>
       </div>
 
-      <div class="card">
-        <h2>AI suggestions <button id="moreSuggest" class="btn-ghost btn-sm" style="margin-left:auto">🔄 More / refresh</button></h2>
+      <div class="card c-amber">
+        <h2>✨ AI suggestions <button id="moreSuggest" class="btn-ghost btn-sm" style="margin-left:auto">🔄 More / refresh</button></h2>
         <div id="suggestStatus" class="muted">Build a set, then “Suggest more” for songs that fit the vibe.</div>
         <table id="suggestions"></table>
       </div>
@@ -344,6 +363,6 @@
 
     <div id="toast"></div>
 
-    <script src="player.js?v=20260612b"></script>
+    <script src="player.js?v=20260612c"></script>
   </body>
 </html>
